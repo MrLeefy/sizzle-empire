@@ -154,3 +154,39 @@ describe('Phase 3 & 4: Economy Math, Large Numbers, Payout Pipeline & City Cycle
     expect(veteranFullCity.citiesCompleted).toBe(1);
   });
 });
+
+describe('Station speed milestones & readable cook timers', () => {
+  it('alternates Speed ×2 / Profit ×2 milestones and halves cook time on each Speed milestone', async () => {
+    const econ = await import('@/engine/economy/economy');
+    const { BALANCE } = await import('@/engine/economy/balanceConfig');
+    const { getRestaurantTemplate } = await import('@/data/restaurants');
+    const tpl = getRestaurantTemplate('citrus_press');
+    const stnTpl = tpl.stations[0];
+    const maxLv = 250;
+
+    expect(econ.getNextMilestoneReward(1, maxLv)).toEqual({ level: 10, kind: 'speed' });
+    expect(econ.getNextMilestoneReward(10, maxLv)).toEqual({ level: 25, kind: 'profit' });
+    expect(econ.getNextMilestoneReward(25, maxLv)).toEqual({ level: 50, kind: 'speed' });
+
+    const mk = (level: number) => ({ index: 0, unlocked: true, level, machines: 1, speedMultiplier: 1, profitMultiplier: 1 }) as never;
+    const t1 = econ.getStationCookSeconds(stnTpl, mk(1), maxLv, 1);
+    const t10 = econ.getStationCookSeconds(stnTpl, mk(10), maxLv, 1);
+    const t25 = econ.getStationCookSeconds(stnTpl, mk(25), maxLv, 1);
+    const t50 = econ.getStationCookSeconds(stnTpl, mk(50), maxLv, 1);
+    // Several seconds per dish at level 1, then visibly faster at Speed milestones only
+    expect(t1).toBeGreaterThanOrEqual(3);
+    expect(t1).toBeCloseTo(stnTpl.basePrepTime, 5);
+    expect(t10).toBeCloseTo(t1 / BALANCE.MILESTONE_SPEED_MULTIPLIER, 5);
+    expect(t25).toBeCloseTo(t10, 5);
+    expect(t50).toBeCloseTo(t10 / BALANCE.MILESTONE_SPEED_MULTIPLIER, 5);
+
+    // Profit only doubles on Profit milestones
+    const p9 = econ.getStationBaseDishProfit(stnTpl, mk(9), maxLv, 1, 1);
+    const p10 = econ.getStationBaseDishProfit(stnTpl, mk(10), maxLv, 1, 1);
+    const p24 = econ.getStationBaseDishProfit(stnTpl, mk(24), maxLv, 1, 1);
+    const p25 = econ.getStationBaseDishProfit(stnTpl, mk(25), maxLv, 1, 1);
+    const growth = BALANCE.STATION_PROFIT_GROWTH;
+    expect(p10.div(p9).toNumber()).toBeCloseTo(growth, 3);
+    expect(p25.div(p24).toNumber()).toBeCloseTo(growth * BALANCE.MILESTONE_MULTIPLIER_PER_THRESHOLD, 3);
+  });
+});

@@ -1,5 +1,7 @@
 export interface ProjectedCookingSlot {
   progress: number; // 0..1
+  /** Seconds left on this dish (shown as a countdown next to the progress bar). */
+  remainingSec?: number;
   quality: 'normal' | 'perfect' | 'divine';
   x: number;
   y: number;

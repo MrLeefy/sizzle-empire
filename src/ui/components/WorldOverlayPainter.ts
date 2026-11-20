@@ -73,8 +73,13 @@ interface StationBadgeNode extends AnchorTrackable {
 
 interface CookPieNode extends AnchorTrackable {
   pieEl: HTMLDivElement;
+  timerEl: HTMLDivElement;
+  fillEl: HTMLDivElement;
+  labelEl: HTMLSpanElement;
   lastQuality: string;
   lastDeg: number;
+  lastFillQ: number;
+  lastLabel: string;
 }
 
 type ResolvedOrderStatus = 'waiting_to_order' | 'ordering' | 'waiting_for_food';
@@ -469,6 +474,7 @@ export class WorldOverlayPainter {
           if (pieNode.lastQuality !== safeQuality) {
             pieNode.lastQuality = safeQuality;
             pieNode.pieEl.className = `cook-pie ${safeQuality}`;
+            pieNode.timerEl.className = `cook-timer ${safeQuality}`;
           }
 
           const rawProg = Number.isFinite(slot.progress) ? slot.progress : 0;
@@ -477,6 +483,21 @@ export class WorldOverlayPainter {
           if (pieNode.lastDeg !== deg) {
             pieNode.lastDeg = deg;
             pieNode.pieEl.style.setProperty('--pie-deg', `${deg}deg`);
+          }
+
+          // Progress bar + seconds countdown (Eatventure-style readable cook timer)
+          const fillQ = Math.round(clampedProg * 200);
+          if (pieNode.lastFillQ !== fillQ) {
+            pieNode.lastFillQ = fillQ;
+            pieNode.fillEl.style.transform = `scaleX(${(fillQ / 200).toFixed(3)})`;
+          }
+          const rem = typeof slot.remainingSec === 'number' && Number.isFinite(slot.remainingSec)
+            ? Math.max(0, slot.remainingSec)
+            : null;
+          const label = rem === null ? '' : rem >= 10 ? `${Math.ceil(rem)}s` : `${rem.toFixed(1)}s`;
+          if (pieNode.lastLabel !== label) {
+            pieNode.lastLabel = label;
+            pieNode.labelEl.textContent = label;
           }
         }
       }
@@ -934,20 +955,37 @@ export class WorldOverlayPainter {
     const anchor = document.createElement('div');
     anchor.className = 'wo-anchor wo-cook-anchor';
 
+    const timerEl = document.createElement('div');
+    timerEl.className = 'cook-timer normal';
+
     const pieEl = document.createElement('div');
     pieEl.className = 'cook-pie normal';
 
-    anchor.append(pieEl);
+    const barEl = document.createElement('div');
+    barEl.className = 'cook-timer-bar';
+    const fillEl = document.createElement('div');
+    fillEl.className = 'cook-timer-fill';
+    const labelEl = document.createElement('span');
+    labelEl.className = 'cook-timer-label';
+    barEl.append(fillEl, labelEl);
+
+    timerEl.append(pieEl, barEl);
+    anchor.append(timerEl);
     this.layer.appendChild(anchor);
 
     return {
       anchor,
       pieEl,
+      timerEl,
+      fillEl,
+      labelEl,
       lastX: Number.NaN,
       lastY: Number.NaN,
       lastVisible: true,
       lastQuality: 'normal',
       lastDeg: -1,
+      lastFillQ: -1,
+      lastLabel: '',
     };
   }
 

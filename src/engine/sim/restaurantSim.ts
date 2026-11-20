@@ -20,6 +20,7 @@ import {
   calculateTipValue,
   computeAnalyticalOfflineEps,
   getStationBaseDishProfit,
+  getStationCookSeconds,
   getStationMaxLevel,
 } from '@/engine/economy/economy';
 import { PET_SPECIES_BY_ID } from '@/data/pets';
@@ -720,10 +721,11 @@ export class RestaurantSimulator {
           const stnTpl = template.stations[stn.index];
           const cookMult =
             runtime.cookSpeedMult *
-            stn.speedMultiplier *
             (isPlayerLike ? stats.playerCookSpeedMult : stats.workerCookSpeedMult);
 
-          worker.cookDuration = isInstant ? 0 : Math.max(0.15, stnTpl.basePrepTime / cookMult);
+          worker.cookDuration = isInstant
+            ? 0
+            : getStationCookSeconds(stnTpl, stn, getStationMaxLevel(template, runtime), cookMult);
           worker.cookProgress = isInstant ? 1 : 0;
           worker.carryingDishColor = stnTpl.color;
           worker.carryingQuality = order.quality;

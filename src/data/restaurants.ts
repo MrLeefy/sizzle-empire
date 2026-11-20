@@ -50,8 +50,13 @@ function buildStations(dishes: DishSeed[], baseCostScale: number, tier: Restaura
     const stepMult = idx === 0 ? 1 : Math.pow(14.5, idx);
     const unlockCost = idx === 0 ? 0 : Math.round(35 * baseCostScale * tierFactor * stepMult);
     const baseUpgradeCost = Math.max(4, Math.round(4.4 * baseCostScale * tierFactor * Math.pow(11.6, idx)));
-    const baseRevenue = Math.max(2, Math.round(2.15 * baseCostScale * tierFactor * Math.pow(9.6, idx)));
-    const prepTime = dish.prepTime ?? Number((2.2 + idx * 1.15).toFixed(2));
+    const baseRevenue = Math.max(
+      2,
+      Math.round(2.15 * BALANCE.PREP_REVENUE_SCALE * baseCostScale * tierFactor * Math.pow(9.6, idx)),
+    );
+    const prepTime = Number(
+      ((dish.prepTime ?? 2.2 + idx * 1.15) * BALANCE.PREP_TIME_SCALE).toFixed(2),
+    );
     return {
       id: `${dish.id}_${idx}`,
       name: dish.name,

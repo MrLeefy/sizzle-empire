@@ -49,6 +49,67 @@ export function countPassedMilestones(level: number, maxLevel: number): number {
   return count;
 }
 
+export type MilestoneRewardKind = 'speed' | 'profit';
+
+/** Reward of the n-th (0-based) milestone threshold: even = Speed ×2, odd = Profit ×2. */
+export function getMilestoneRewardKind(milestoneIndex: number): MilestoneRewardKind {
+  return milestoneIndex % 2 === 0 ? 'speed' : 'profit';
+}
+
+function countPassedMilestonesOfKind(
+  level: number,
+  maxLevel: number,
+  kind: MilestoneRewardKind,
+): number {
+  let count = 0;
+  let idx = 0;
+  for (const m of BALANCE.MILESTONE_LEVELS) {
+    if (m > maxLevel) break;
+    if (level >= m && getMilestoneRewardKind(idx) === kind) count++;
+    idx++;
+  }
+  return count;
+}
+
+/** Station cook-speed multiplier earned from passed Speed milestones (1, 2, 4, ...). */
+export function getStationSpeedMultiplier(level: number, maxLevel: number): number {
+  return Math.pow(
+    BALANCE.MILESTONE_SPEED_MULTIPLIER,
+    countPassedMilestonesOfKind(Math.max(1, level), maxLevel, 'speed'),
+  );
+}
+
+/** Next milestone level and what it grants, or null once all are passed. */
+export function getNextMilestoneReward(
+  level: number,
+  maxLevel: number,
+): { level: number; kind: MilestoneRewardKind } | null {
+  let idx = 0;
+  for (const m of BALANCE.MILESTONE_LEVELS) {
+    if (m > maxLevel) break;
+    if (level < m) return { level: m, kind: getMilestoneRewardKind(idx) };
+    idx++;
+  }
+  return null;
+}
+
+/**
+ * Seconds one dish takes at this station for a given cook-speed multiplier
+ * (worker/player bonuses × restaurant upgrades × station speed milestones).
+ */
+export function getStationCookSeconds(
+  stationTpl: StationTemplate,
+  station: StationState,
+  maxLevel: number,
+  cookSpeedMult: number,
+): number {
+  const mult =
+    Math.max(0.05, cookSpeedMult) *
+    Math.max(0.05, station.speedMultiplier || 1) *
+    getStationSpeedMultiplier(station.level, maxLevel);
+  return Math.max(0.15, stationTpl.basePrepTime / mult);
+}
+
 export function getNextMilestone(level: number, maxLevel: number): number | null {
   for (const m of BALANCE.MILESTONE_LEVELS) {
     if (m <= maxLevel && level < m) return m;
@@ -250,7 +311,7 @@ export function getStationBaseDishProfit(
   restaurantGlobalProfitMult: number,
 ): Decimal {
   const lv = Math.max(1, station.level);
-  const milestonesPassed = countPassedMilestones(lv, maxLevel);
+  const milestonesPassed = countPassedMilestonesOfKind(lv, maxLevel, 'profit');
   const milestoneMult = Decimal.pow(BALANCE.MILESTONE_MULTIPLIER_PER_THRESHOLD, milestonesPassed);
 
   return d(stationTpl.baseRevenue)
@@ -328,7 +389,8 @@ export function computeAnalyticalOfflineEps(
       cityNumber,
       runtime.globalProfitMult,
     );
-    const effectivePrep = Math.max(0.15, (tpl.basePrepTime / (avgCookSpeed * stn.speedMultiplier)) * (1 - stats.workerInstantCookChance * 0.6));
+    const effectivePrep =
+      getStationCookSeconds(tpl, stn, maxLv, avgCookSpeed) * (1 - stats.workerInstantCookChance * 0.6);
     const cycleSec = effectivePrep + avgWalkSec;
     const dishPerSec = Math.min(activeWorkers, stn.machines + 0.5) / cycleSec;
     totalThroughputPerSec = totalThroughputPerSec.add(baseDish.mul(dishPerSec));

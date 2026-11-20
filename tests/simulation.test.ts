@@ -14,8 +14,9 @@ describe('Phase 2: Restaurant Simulation, Worker AI, Pathfinding & Pets', () => 
     expect(controller.save.mainRestaurant.workers.length).toBe(1);
     expect(controller.save.mainRestaurant.workers[0].role).toBe('player');
 
-    // Run 60 seconds of deterministic fixed-timestep simulation
-    for (let i = 0; i < 60 * 20; i++) {
+    // Run 120 seconds of deterministic fixed-timestep simulation (dishes take several
+    // seconds each with the readable cook timer, scaled by BALANCE.PREP_TIME_SCALE)
+    for (let i = 0; i < 120 * 20; i++) {
       controller.stepSimulationFixed(0.05);
     }
 
@@ -50,7 +51,7 @@ describe('Phase 2: Restaurant Simulation, Worker AI, Pathfinding & Pets', () => 
     expect(totalWorkers).toBeGreaterThanOrEqual(4);
 
     let maxSimultaneousMachineViolation = false;
-    for (let i = 0; i < 90 * 20; i++) {
+    for (let i = 0; i < 180 * 20; i++) {
       controller.stepSimulationFixed(0.05);
       for (const stn of controller.save.mainRestaurant.stations) {
         if (stn.occupiedByWorkerIds.length > stn.machines) {
@@ -77,8 +78,8 @@ describe('Phase 2: Restaurant Simulation, Worker AI, Pathfinding & Pets', () => 
     save.mainRestaurant = runtime;
     const controller = new GameController(save);
 
-    // 70s: the first customers now stroll in along the sidewalk from off-screen (~2s walk-in)
-    for (let i = 0; i < 70 * 20; i++) {
+    // 140s: sidewalk walk-in from off-screen + several-second readable cook timers
+    for (let i = 0; i < 140 * 20; i++) {
       controller.stepSimulationFixed(0.05);
     }
 
@@ -101,7 +102,7 @@ describe('Phase 2: Restaurant Simulation, Worker AI, Pathfinding & Pets', () => 
     const controller = new GameController(save);
 
     let sawCar = false;
-    for (let i = 0; i < 60 * 20; i++) {
+    for (let i = 0; i < 120 * 20; i++) {
       controller.stepSimulationFixed(0.05);
       if (controller.save.mainRestaurant.customers.some((c) => c.isCar)) {
         sawCar = true;

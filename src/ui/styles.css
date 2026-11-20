@@ -541,6 +541,66 @@ textarea {
 }
 
 /* Layer 2: Glossy Radial Pie Cooking Timers (CSS conic-gradient) */
+/* Cook timer pill: pie + filling bar + seconds countdown, anchored above the cooking worker */
+.cook-timer {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.cook-timer .cook-pie {
+  transform: none;
+  z-index: 1;
+}
+
+.cook-timer-bar {
+  position: relative;
+  width: 64px;
+  height: 20px;
+  margin-left: -8px;
+  border-radius: 0 999px 999px 0;
+  border: 2.5px solid #3D2314;
+  border-left: 0;
+  background: #FDE6B8;
+  overflow: hidden;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.55),
+    0 3px 0 #3D2314;
+}
+
+.cook-timer-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: linear-gradient(180deg, #86EFAC 0%, #22C55E 100%);
+  transition: transform 90ms linear;
+}
+
+.cook-timer.perfect .cook-timer-fill {
+  background: linear-gradient(180deg, #FEF08A 0%, #EAB308 100%);
+}
+
+.cook-timer.divine .cook-timer-fill {
+  background: linear-gradient(180deg, #E9D5FF 0%, #A855F7 100%);
+}
+
+.cook-timer-label {
+  position: relative;
+  display: block;
+  padding-left: 10px;
+  line-height: 16px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #fff;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  -webkit-text-stroke: 3px #3D2314;
+  paint-order: stroke fill;
+}
+
 .cook-pie {
   position: relative;
   width: 28px;

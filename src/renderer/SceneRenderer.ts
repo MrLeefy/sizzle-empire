@@ -1906,7 +1906,7 @@ export class SceneRenderer {
       if (w.status !== 'cooking' || w.activeStationIndex === null) continue;
       const wx = w.prevPos.x + (w.pos.x - w.prevPos.x) * alpha;
       const wz = w.prevPos.z + (w.pos.z - w.prevPos.z) * alpha;
-      const slotProj = this.projectToScreen(wx, 2.08, wz);
+      const slotProj = this.projectToScreen(wx, 2.55, wz); // floats above the chef hat
       if (!slotProj.visible) continue;
       let list = cookingByStation.get(w.activeStationIndex);
       if (!list) {
@@ -1915,6 +1915,7 @@ export class SceneRenderer {
       }
       list.push({
         progress: Math.max(0, Math.min(1, w.cookProgress)),
+        remainingSec: Math.max(0, (1 - Math.min(1, w.cookProgress)) * Math.max(0, w.cookDuration)),
         quality: w.carryingQuality,
         x: slotProj.x,
         y: slotProj.y,
