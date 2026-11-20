@@ -46,12 +46,12 @@ function buildStations(dishes: DishSeed[], baseCostScale: number, tier: Restaura
             : 1200;
 
   return dishes.map((dish, idx) => {
-    // Exponential step between stations so unlocking each new station creates exciting progression spikes
-    const stepMult = idx === 0 ? 1 : Math.pow(12.5, idx);
-    const unlockCost = idx === 0 ? 0 : Math.round(28 * baseCostScale * tierFactor * stepMult);
-    const baseUpgradeCost = Math.max(4, Math.round(4.5 * baseCostScale * tierFactor * Math.pow(9.5, idx)));
-    const baseRevenue = Math.max(2, Math.round(2.6 * baseCostScale * tierFactor * Math.pow(8.2, idx)));
-    const prepTime = dish.prepTime ?? Number((1.6 + idx * 0.55).toFixed(2));
+    // Authentic Eatventure-style exponential steps between stations so each unlock is an exciting milestone
+    const stepMult = idx === 0 ? 1 : Math.pow(14.5, idx);
+    const unlockCost = idx === 0 ? 0 : Math.round(35 * baseCostScale * tierFactor * stepMult);
+    const baseUpgradeCost = Math.max(4, Math.round(4.4 * baseCostScale * tierFactor * Math.pow(11.6, idx)));
+    const baseRevenue = Math.max(2, Math.round(2.15 * baseCostScale * tierFactor * Math.pow(9.6, idx)));
+    const prepTime = dish.prepTime ?? Number((2.2 + idx * 1.15).toFixed(2));
     return {
       id: `${dish.id}_${idx}`,
       name: dish.name,
@@ -91,16 +91,16 @@ function buildUpgrades(
   let uid = 0;
   const nextId = (prefix: string) => `${seed.id}_${prefix}_${uid++}`;
 
-  // Per-station profit multipliers & extra machines
+  // Per-station profit multipliers & extra machines spaced across the venue curve
   stations.forEach((stn, sIdx) => {
-    const anchor = Math.max(stn.baseUnlockCost, stn.baseUpgradeCost * 5);
+    const anchor = Math.max(stn.baseUnlockCost, stn.baseUpgradeCost * 6);
 
     upgrades.push({
       id: nextId('prof2'),
       name: `Fresh ${stn.name}`,
       description: `${stn.name} profit ×2`,
       icon: stn.icon,
-      cost: Math.round(anchor * 2.2),
+      cost: Math.round(anchor * 3.0),
       kind: 'station_profit',
       stationIndex: sIdx,
       value: 2,
@@ -112,7 +112,7 @@ function buildUpgrades(
         name: `Extra ${stn.name} Unit`,
         description: `+1 machine slot at ${stn.name}`,
         icon: '⚙️',
-        cost: Math.round(anchor * 4.5),
+        cost: Math.round(anchor * 6.0),
         kind: 'add_machine',
         stationIndex: sIdx,
         value: 1,
@@ -124,7 +124,7 @@ function buildUpgrades(
       name: `Artisan ${stn.name}`,
       description: `${stn.name} profit ×3`,
       icon: stn.icon,
-      cost: Math.round(anchor * 9.5),
+      cost: Math.round(anchor * 14),
       kind: 'station_profit',
       stationIndex: sIdx,
       value: 3,
@@ -136,36 +136,59 @@ function buildUpgrades(
         name: `Signature ${stn.name}`,
         description: `${stn.name} profit ×5`,
         icon: stn.icon,
-        cost: Math.round(anchor * 38),
+        cost: Math.round(anchor * 62),
         kind: 'station_profit',
         stationIndex: sIdx,
         value: 5,
       });
     }
 
-    if (seed.tier === 'eatery' || seed.tier === 'flagship') {
+    if (seed.tier === 'food_van' || seed.tier === 'eatery' || seed.tier === 'flagship') {
       upgrades.push({
         id: nextId('prof10'),
         name: `Gourmet ${stn.name}`,
         description: `${stn.name} profit ×10`,
         icon: stn.icon,
-        cost: Math.round(anchor * 180),
+        cost: Math.round(anchor * 380),
         kind: 'station_profit',
         stationIndex: sIdx,
         value: 10,
       });
     }
 
-    if (seed.tier === 'flagship') {
+    if (seed.tier === 'eatery' || seed.tier === 'flagship') {
       upgrades.push({
-        id: nextId('prof25'),
-        name: `Masterwork ${stn.name}`,
-        description: `${stn.name} profit ×25`,
+        id: nextId('prof20'),
+        name: `Chef's Choice ${stn.name}`,
+        description: `${stn.name} profit ×20`,
         icon: stn.icon,
-        cost: Math.round(anchor * 1100),
+        cost: Math.round(anchor * 3400),
         kind: 'station_profit',
         stationIndex: sIdx,
-        value: 25,
+        value: 20,
+      });
+    }
+
+    if (seed.tier === 'flagship') {
+      upgrades.push({
+        id: nextId('prof50'),
+        name: `Masterwork ${stn.name}`,
+        description: `${stn.name} profit ×50`,
+        icon: stn.icon,
+        cost: Math.round(anchor * 38000),
+        kind: 'station_profit',
+        stationIndex: sIdx,
+        value: 50,
+      });
+      upgrades.push({
+        id: nextId('prof100'),
+        name: `Michelin ${stn.name}`,
+        description: `${stn.name} profit ×100`,
+        icon: stn.icon,
+        cost: Math.round(anchor * 650000),
+        kind: 'station_profit',
+        stationIndex: sIdx,
+        value: 100,
       });
     }
   });
@@ -188,7 +211,7 @@ function buildUpgrades(
       name: i === 0 ? 'Hire Assistant Chef' : `Hire Line Chef #${i + 1}`,
       description: '+1 Chef preparing orders automatically',
       icon: '👨‍🍳',
-      cost: Math.round(35 * scale * tierMult * Math.pow(8.5, i)),
+      cost: Math.round(45 * scale * tierMult * Math.pow(10.5, i)),
       kind: 'hire_chef',
       value: 1,
     });
@@ -207,7 +230,7 @@ function buildUpgrades(
         name: `Hire Server #${i + 1}`,
         description: '+1 Waiter taking orders & serving tables',
         icon: '🧑‍💼',
-        cost: Math.round(55 * scale * tierMult * Math.pow(7.2, i)),
+        cost: Math.round(70 * scale * tierMult * Math.pow(8.8, i)),
         kind: 'hire_waiter',
         value: 1,
       });
@@ -220,7 +243,7 @@ function buildUpgrades(
       name: 'Hire Window Cashier',
       description: '+1 Cashier dedicated to rapid order taking',
       icon: '🧾',
-      cost: Math.round(60 * scale * tierMult),
+      cost: Math.round(75 * scale * tierMult),
       kind: 'hire_cashier',
       value: 1,
     });
@@ -239,7 +262,7 @@ function buildUpgrades(
           : `Expand Guest Queue +${i < 2 ? 1 : 2}`,
       description: isTable ? '+2 seated customer capacity' : '+1 simultaneous customer capacity',
       icon: seed.archetype === 'drive_thru' ? '🚗' : isTable ? '🪑' : '🙋',
-      cost: Math.round(24 * scale * tierMult * Math.pow(6.8, i)),
+      cost: Math.round(24 * scale * tierMult * Math.pow(8.5, i)),
       kind: isTable ? 'add_table' : 'add_customer',
       value: isTable ? 2 : 1,
     });
@@ -251,7 +274,7 @@ function buildUpgrades(
     name: 'Grip Kitchen Shoes',
     description: 'All staff walk +30% faster',
     icon: '👟',
-    cost: Math.round(50 * scale * tierMult),
+    cost: Math.round(68 * scale * tierMult),
     kind: 'worker_speed',
     value: 0.3,
   });
@@ -261,7 +284,7 @@ function buildUpgrades(
     name: 'Turbo Burners',
     description: 'All stations cook +35% faster',
     icon: '🔥',
-    cost: Math.round(140 * scale * tierMult),
+    cost: Math.round(190 * scale * tierMult),
     kind: 'cook_speed',
     value: 0.35,
   });
@@ -272,7 +295,7 @@ function buildUpgrades(
       name: 'Street Advertising',
       description: 'All restaurant profits ×2',
       icon: '📣',
-      cost: Math.round(320 * scale * tierMult),
+      cost: Math.round(450 * scale * tierMult),
       kind: 'global_profit',
       value: 2,
     });
@@ -281,7 +304,7 @@ function buildUpgrades(
       name: 'Precision Workflow',
       description: 'All staff walk +45% faster',
       icon: '⚡',
-      cost: Math.round(1400 * scale * tierMult),
+      cost: Math.round(2200 * scale * tierMult),
       kind: 'worker_speed',
       value: 0.45,
     });

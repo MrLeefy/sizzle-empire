@@ -7,10 +7,10 @@ import type { GearTemplate, Rarity } from '@/types/game';
  */
 export const GEAR_TEMPLATES: GearTemplate[] = [
   // ================= COMMON =================
-  { id: 'c_head_cap', name: 'Canvas Bistro Cap', slot: 'head', rarity: 'common', source: 'standard', color: '#94a3b8', accentColor: '#e2e8f0', visualStyle: 'cap', effects: [{ type: 'walk_speed', value: 0.2 }] },
-  { id: 'c_head_bandana', name: 'Line Cook Bandana', slot: 'head', rarity: 'common', source: 'standard', color: '#64748b', accentColor: '#f8fafc', visualStyle: 'bandana', effects: [{ type: 'cook_speed', value: 0.15 }] },
-  { id: 'c_head_visor', name: 'Sunboard Visor', slot: 'head', rarity: 'common', source: 'standard', color: '#78716c', accentColor: '#fde68a', visualStyle: 'visor', effects: [{ type: 'walk_speed', value: 0.15 }] },
-  { id: 'c_body_apron', name: 'Cotton Bib Apron', slot: 'body', rarity: 'common', source: 'standard', color: '#cbd5e1', accentColor: '#475569', visualStyle: 'apron', effects: [{ type: 'cook_speed', value: 0.15 }] },
+  { id: 'c_head_cap', name: 'Canvas Bistro Cap', slot: 'head', rarity: 'common', source: 'standard', color: '#3b82f6', accentColor: '#fde047', visualStyle: 'cap', effects: [{ type: 'walk_speed', value: 0.2 }] },
+  { id: 'c_head_bandana', name: 'Line Cook Bandana', slot: 'head', rarity: 'common', source: 'standard', color: '#f97316', accentColor: '#fffbf0', visualStyle: 'bandana', effects: [{ type: 'cook_speed', value: 0.15 }] },
+  { id: 'c_head_visor', name: 'Sunboard Visor', slot: 'head', rarity: 'common', source: 'standard', color: '#14b8a6', accentColor: '#fde68a', visualStyle: 'visor', effects: [{ type: 'walk_speed', value: 0.15 }] },
+  { id: 'c_body_apron', name: 'Cotton Bib Apron', slot: 'body', rarity: 'common', source: 'standard', color: '#fffbf0', accentColor: '#f97316', visualStyle: 'apron', effects: [{ type: 'cook_speed', value: 0.15 }] },
   { id: 'c_body_tee', name: 'Prep Kitchen Tee', slot: 'body', rarity: 'common', source: 'standard', color: '#94a3b8', accentColor: '#f1f5f9', visualStyle: 'tee', effects: [{ type: 'walk_speed', value: 0.2 }] },
   { id: 'c_hand_spoon', name: 'Wooden Tasting Spoon', slot: 'hand', rarity: 'common', source: 'standard', color: '#b45309', accentColor: '#fde68a', visualStyle: 'spoon', effects: [{ type: 'cook_speed', value: 0.15 }] },
   { id: 'c_hand_spatula', name: 'Tin Flipper', slot: 'hand', rarity: 'common', source: 'standard', color: '#94a3b8', accentColor: '#334155', visualStyle: 'spatula', effects: [{ type: 'walk_speed', value: 0.2 }] },

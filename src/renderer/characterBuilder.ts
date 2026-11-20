@@ -1075,22 +1075,28 @@ function buildHeadGearMesh(
       dome.position.y = -0.02;
       const bill = new THREE.Mesh(
         getGeo(geos, 'gear_cap_bill', () => createRoundedBoxGeometry(0.38, 0.055, 0.28, 1, 0.025)),
-        mainMat,
+        accMat,
       );
       bill.position.set(0, 0.01, 0.28);
       bill.rotation.x = 0.12;
+      const capBand = new THREE.Mesh(
+        getGeo(geos, 'gear_cap_band', () => new THREE.TorusGeometry(0.355, 0.032, 6, 16)),
+        accMat,
+      );
+      capBand.rotation.x = Math.PI / 2;
+      capBand.position.y = 0.03;
       const btn = new THREE.Mesh(
-        getGeo(geos, 'gear_cap_btn', () => new THREE.SphereGeometry(0.045, 8, 6)),
+        getGeo(geos, 'gear_cap_btn', () => new THREE.SphereGeometry(0.052, 8, 6)),
         accMat,
       );
       btn.position.y = 0.35;
       const badge = new THREE.Mesh(
-        getGeo(geos, 'gear_cap_badge', () => new THREE.CylinderGeometry(0.065, 0.065, 0.03, 10)),
+        getGeo(geos, 'gear_cap_badge', () => new THREE.CylinderGeometry(0.075, 0.075, 0.032, 10)),
         accMat,
       );
       badge.rotation.x = Math.PI / 2;
       badge.position.set(0, 0.14, 0.34);
-      g.add(dome, bill, btn, badge);
+      g.add(dome, bill, capBand, btn, badge);
 
       if (tpl.rarity === 'legendary' || isHigh) {
         const wingGeo = getGeo(geos, 'gear_cap_wing', () => createRoundedBoxGeometry(0.05, 0.12, 0.24, 1, 0.02));

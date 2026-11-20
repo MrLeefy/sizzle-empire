@@ -69,8 +69,8 @@ const CAMERA_FOV_DEG = 36;
 const TAN_HALF_FOV_Y = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV_DEG / 2));
 const MIN_CAMERA_ZOOM = 0.7;
 const MAX_CAMERA_ZOOM = 1.65;
-const CAM_Y_RATIO = 1.08;
-const CAM_Z_RATIO = 0.76;
+const CAM_Y_RATIO = 0.88;
+const CAM_Z_RATIO = 0.96;
 const CAM_DIST_NORM = Math.hypot(CAM_Y_RATIO, CAM_Z_RATIO);
 
 const PEDESTRIAN_POOL_CAP = 24;
@@ -280,13 +280,13 @@ export class SceneRenderer {
   }
 
   private setupLighting(): void {
-    // 1. Bright sunny sky + warm cream/peach ground bounce (replaces muddy #526580)
-    this.hemiLight = new THREE.HemisphereLight('#fffdf5', '#ffe8cc', 1.12);
+    // 1. Bright sunny sky + warm honey-peach ground bounce (vibrant Eatventure miniature lighting)
+    this.hemiLight = new THREE.HemisphereLight('#fffdf5', '#f7cfa0', 1.15);
     this.scene.add(this.hemiLight);
 
-    // 2. Warm sunny key light with soft PCF shadows + normalBias to prevent bevel acne
-    this.dirLight = new THREE.DirectionalLight('#fff6e5', 1.42);
-    this.dirLight.position.set(9.5, 22, 11.5);
+    // 2. Warm sunlit key light with crisp diagonal PCFSoft shadows + normalBias to prevent bevel acne
+    this.dirLight = new THREE.DirectionalLight('#fff2d2', 1.52);
+    this.dirLight.position.set(10.5, 21, 13.5);
     this.dirLight.castShadow = true;
     this.dirLight.shadow.mapSize.set(2048, 2048);
     this.dirLight.shadow.camera.near = 4;
@@ -296,8 +296,8 @@ export class SceneRenderer {
     this.scene.add(this.dirLight);
     this.scene.add(this.dirLight.target);
 
-    // 3. Subtle pastel back-left rim light separating rounded silhouettes from floor/walls
-    this.rimLight = new THREE.DirectionalLight('#ffd6e8', 0.42);
+    // 3. Soft pastel back-left rim light giving rounded characters & stations toy-like silhouette pop
+    this.rimLight = new THREE.DirectionalLight('#ffe4f2', 0.52);
     this.rimLight.position.set(-11, 13, -12);
     this.rimLight.castShadow = false;
     this.scene.add(this.rimLight);
@@ -335,21 +335,21 @@ export class SceneRenderer {
     const scale = this.lightIntensityScale;
     if (quality === 'low' || !this.envMap) {
       this.scene.environment = null;
-      this.hemiLight.intensity = (this.isDarkVenue ? 0.94 : 1.08) * scale;
+      this.hemiLight.intensity = (this.isDarkVenue ? 0.96 : 1.10) * scale;
     } else {
       this.scene.environment = this.envMap;
       this.scene.environmentIntensity = this.isDarkVenue
         ? quality === 'high'
-          ? 0.36
-          : 0.28
+          ? 0.38
+          : 0.30
         : quality === 'high'
-          ? 0.48
-          : 0.38;
-      this.hemiLight.intensity = (this.isDarkVenue ? 0.78 : 0.88) * scale;
+          ? 0.52
+          : 0.42;
+      this.hemiLight.intensity = (this.isDarkVenue ? 0.80 : 0.90) * scale;
     }
 
-    this.dirLight.intensity = (this.isDarkVenue ? 1.08 : 1.18) * scale;
-    this.renderer.toneMappingExposure = this.isDarkVenue ? 1.04 : 1.02;
+    this.dirLight.intensity = (this.isDarkVenue ? 1.12 : 1.32) * scale;
+    this.renderer.toneMappingExposure = this.isDarkVenue ? 1.05 : 1.07;
     this.vfx.setQuality(quality);
   }
 
@@ -617,11 +617,11 @@ export class SceneRenderer {
     const aspect = Math.max(0.35, this.camera.aspect || 0.56);
     const zoom = this.clampZoom(this.currentZoom);
 
-    // Exact horizontal & vertical fit for 36° diorama FOV across 390×844 mobile & desktop
-    const desiredWidth = Math.max(11.6, layout.width + 2.2);
+    // Tight, lush portrait diorama framing for 36° FOV (shows back wall, awning, faces & foreground street)
+    const desiredWidth = Math.max(10.8, layout.width + 1.4);
     const tanHalfH = TAN_HALF_FOV_Y * aspect;
     const distForWidth = (desiredWidth * 0.5) / tanHalfH;
-    const distForDepth = (Math.max(10.5, layout.depth * 0.72) * 0.5) / TAN_HALF_FOV_Y;
+    const distForDepth = (Math.max(10.0, layout.depth * 0.68) * 0.5) / TAN_HALF_FOV_Y;
     const idealEuclideanDist = Math.max(distForWidth, distForDepth) / zoom;
     const baseDist = idealEuclideanDist / CAM_DIST_NORM;
 
@@ -636,7 +636,7 @@ export class SceneRenderer {
       baseDist * CAM_Y_RATIO - punchWave * 0.55,
       baseDist * CAM_Z_RATIO + this.cameraPanZ - punchWave * 0.85,
     );
-    this.camera.lookAt(0, 0.25, this.cameraPanZ - 0.35);
+    this.camera.lookAt(0, 0.42, this.cameraPanZ - 0.12);
 
     // Scale fog dynamically with camera distance so Grand Hall on 390px portrait NEVER fogs out!
     if (this.scene.fog instanceof THREE.Fog) {

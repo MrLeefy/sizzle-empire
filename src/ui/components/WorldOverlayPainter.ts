@@ -140,12 +140,36 @@ function setAnchorVisible(node: AnchorTrackable, visible: boolean): void {
   }
 }
 
+function compactDenseMoney(formatted: string): string {
+  // Trim redundant decimals on dense 8-10 station pills (e.g. "$10.4M" -> "$10M", "$1.62B" -> "$1.6B")
+  const m = formatted.match(/^(\$)?(\d+)(?:\.(\d+))?([A-Za-z]+)$/);
+  if (!m) return formatted;
+  const [, sym = '$', intPart, decPart, suffix] = m;
+  if (!decPart || intPart.length >= 2) return `${sym}${intPart}${suffix}`;
+  return `${sym}${intPart}.${decPart.slice(0, 1)}${suffix}`;
+}
+
+interface FlyCoinParticle {
+  el: HTMLDivElement;
+  active: boolean;
+  startX: number;
+  startY: number;
+  ctrlX: number;
+  ctrlY: number;
+  endX: number;
+  endY: number;
+  startMs: number;
+  durMs: number;
+}
+
+const MAX_FLY_COINS = 8;
+
 /**
  * Zero-React-overhead imperative DOM overlay painter for 3D-projected HUD elements.
  * - Strictly GPU-composited via CSS translate3d on outer .wo-anchor nodes (zero layout-thrashing offsets).
  * - 100% XSS-safe DOM node creation & textContent updates (zero raw HTML string injection).
  * - Zero-allocation memoization of resolveStationPurchasePlan & formatMoney.
- * - Free-list pooled radial cooking pies, order speech balloons, and floating callouts.
+ * - Free-list pooled radial cooking pies, order speech balloons, floating callouts & HUD coin-magnet particles.
  */
 export class WorldOverlayPainter {
   private layer: HTMLElement;
@@ -164,6 +188,7 @@ export class WorldOverlayPainter {
   private tipNodes = new Map<string, TipPillNode>();
   private floatNodes = new Map<number, FloatCalloutNode>();
   private floatPool: FloatCalloutNode[] = [];
+  private flyCoins: FlyCoinParticle[] = [];
 
   // Reusable per-frame visibility sets (zero per-frame allocations)
   private seenStations = new Set<number>();
@@ -392,7 +417,7 @@ export class WorldOverlayPainter {
         }
 
         const text = !stn.unlocked
-          ? cached.formattedCost
+          ? (isDense ? compactDenseMoney(cached.formattedCost) : cached.formattedCost)
           : isMax
             ? 'MAX'
             : `Lv${stn.level}`;
@@ -631,6 +656,7 @@ export class WorldOverlayPainter {
     for (const f of frame.floating) {
       this.seenFloat.add(f.id);
       let node = this.floatNodes.get(f.id);
+      const isNew = !node;
       if (!node) {
         node = this.acquireFloatCalloutNode();
         this.floatNodes.set(f.id, node);
@@ -643,6 +669,23 @@ export class WorldOverlayPainter {
       setAnchorVisible(node, true);
 
       const safeKind = VALID_FLOAT_KINDS.has(f.kind) ? f.kind : 'cash';
+      if (
+        isNew &&
+        (safeKind === 'cash' ||
+          safeKind === 'tip' ||
+          safeKind === 'perfect' ||
+          safeKind === 'divine' ||
+          safeKind === 'golden')
+      ) {
+        const coinBurst =
+          safeKind === 'divine' || safeKind === 'golden'
+            ? 3
+            : safeKind === 'perfect' || safeKind === 'tip'
+              ? 2
+              : 1;
+        this.spawnFlyCoins(f.x, f.y, coinBurst, nowMs);
+      }
+
       if (node.lastKind !== safeKind) {
         node.lastKind = safeKind;
         node.labelEl.className = `float-label ${safeKind}`;
@@ -707,6 +750,70 @@ export class WorldOverlayPainter {
         this.releaseFloatCalloutNode(node);
       }
     }
+
+    // Layer 6: Pooled GPU Flying Gold Coins arcing into the HUD Cash Counter
+    this.stepFlyCoins(nowMs);
+  }
+
+  private spawnFlyCoins(originX: number, originY: number, count: number, nowMs: number): void {
+    if (!Number.isFinite(originX) || !Number.isFinite(originY)) return;
+    for (let i = 0; i < count; i++) {
+      let coin = this.flyCoins.find((c) => !c.active);
+      if (!coin && this.flyCoins.length < MAX_FLY_COINS) {
+        const el = document.createElement('div');
+        el.className = 'wo-fly-coin';
+        el.textContent = '$';
+        el.style.display = 'none';
+        this.layer.appendChild(el);
+        coin = {
+          el,
+          active: false,
+          startX: 0,
+          startY: 0,
+          ctrlX: 0,
+          ctrlY: 0,
+          endX: 68,
+          endY: 26,
+          startMs: 0,
+          durMs: 560,
+        };
+        this.flyCoins.push(coin);
+      }
+      if (!coin) return;
+      const spreadX = (i - (count - 1) * 0.5) * 18;
+      coin.active = true;
+      coin.startX = originX + spreadX;
+      coin.startY = originY;
+      coin.ctrlX = originX * 0.5 + 34 + spreadX * 1.4;
+      coin.ctrlY = Math.min(originY, 160) - 55 - i * 16;
+      coin.endX = 64 + i * 4;
+      coin.endY = 26;
+      coin.startMs = nowMs + i * 55;
+      coin.durMs = 540 + i * 40;
+      coin.el.style.display = '';
+      coin.el.style.opacity = '0';
+    }
+  }
+
+  private stepFlyCoins(nowMs: number): void {
+    for (const c of this.flyCoins) {
+      if (!c.active) continue;
+      if (nowMs < c.startMs) continue;
+      const rawT = (nowMs - c.startMs) / c.durMs;
+      if (rawT >= 1) {
+        c.active = false;
+        c.el.style.display = 'none';
+        continue;
+      }
+      const t = rawT * rawT * (3 - 2 * rawT); // smoothstep arc
+      const inv = 1 - t;
+      const x = inv * inv * c.startX + 2 * inv * t * c.ctrlX + t * t * c.endX;
+      const y = inv * inv * c.startY + 2 * inv * t * c.ctrlY + t * t * c.endY;
+      const sc = 0.72 + Math.sin(t * Math.PI) * 0.42;
+      const alpha = rawT > 0.82 ? Math.max(0, (1 - rawT) / 0.18) : 1;
+      c.el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -50%) scale(${sc.toFixed(2)})`;
+      c.el.style.opacity = alpha.toFixed(2);
+    }
   }
 
   dispose(): void {
@@ -721,6 +828,7 @@ export class WorldOverlayPainter {
     this.tipNodes.clear();
     this.floatNodes.clear();
     this.floatPool.length = 0;
+    this.flyCoins.length = 0;
     this.seenStations.clear();
     this.seenCookPies.clear();
     this.seenOrders.clear();

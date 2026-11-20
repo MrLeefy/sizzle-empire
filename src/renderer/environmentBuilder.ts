@@ -246,7 +246,7 @@ function buildScallopedAwning(
   const slopeGeo = getGeo(
     geos,
     `awn_slp_${Math.round(stripeW * 100)}`,
-    () => createRoundedBoxGeometry(stripeW * 0.99, 0.15, 1.48, 1, 0.045),
+    () => createRoundedBoxGeometry(stripeW * 0.99, 0.14, 0.96, 1, 0.045),
   );
   const valGeo = getGeo(
     geos,
@@ -272,8 +272,8 @@ function buildScallopedAwning(
   let oIdx = 0;
   for (let i = 0; i < stripeCount; i++) {
     const sx = -width / 2 + stripeW * (i + 0.5);
-    dummy.position.set(sx, y + 0.08, zBack + 0.56);
-    dummy.rotation.set(0.26, 0, 0);
+    dummy.position.set(sx, y + 0.06, zBack + 0.36);
+    dummy.rotation.set(0.24, 0, 0);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     if (i % 2 === 0) {
@@ -282,7 +282,7 @@ function buildScallopedAwning(
       slopeOdd.setMatrixAt(oIdx, dummy.matrix);
     }
 
-    dummy.position.set(sx, y - 0.14, zBack + 1.24);
+    dummy.position.set(sx, y - 0.10, zBack + 0.80);
     dummy.rotation.set(Math.PI / 2, 0, 0);
     dummy.updateMatrix();
     if (i % 2 === 0) {
@@ -1436,7 +1436,7 @@ export function buildEnvironmentRig(
 
   const w = layout.width;
   const d = layout.depth;
-  const wallH = 2.75;
+  const wallH = 3.05;
   const tables: TableVisualHandle[] = [];
   const passDishSlots: PassDishSlotHandle[] = [];
   const animatedProps: EnvironmentAnimatedProp[] = [];
@@ -1446,7 +1446,7 @@ export function buildEnvironmentRig(
   let resolvedGroundHex = theme.groundColor;
   if (theme.themeId === 'default' && !theme.isWaterGround) {
     const gc = new THREE.Color(theme.groundColor);
-    gc.offsetHSL(0, 0.16, -0.08);
+    gc.offsetHSL(0, 0.28, -0.10);
     resolvedGroundHex = `#${gc.getHexString()}`;
   }
   const surroundMat = theme.isWaterGround
@@ -1844,10 +1844,48 @@ export function buildEnvironmentRig(
     menuBoard.position.set(0, 1.72, -d / 2 + 0.05);
     root.add(menuBoard);
 
+    // Floating Kitchen Spice Shelves & Colorful Ceramic Jars flanking chalkboard (default/city venues)
+    if (!skipBackWallWindows && theme.themeId === 'default' && w >= 10) {
+      const shelfGeo = getGeo(geos, 'env_kshelf', () => createRoundedBoxGeometry(1.18, 0.08, 0.24, 1, 0.025));
+      const jarGeo = getGeo(geos, 'env_kjar', () => new THREE.CylinderGeometry(0.075, 0.08, 0.22, 10));
+      const lidGeo = getGeo(geos, 'env_klid', () => new THREE.CylinderGeometry(0.082, 0.082, 0.04, 10));
+      const plateGeo = getGeo(geos, 'env_kplt', () => new THREE.CylinderGeometry(0.14, 0.12, 0.04, 12));
+      const jarColors = ['#f97316', '#22c55e', '#facc15', '#ec4899'];
+      const shelfXs = w >= 14 ? [-2.45, 2.45] : [-1.85, 1.85];
+      shelfXs.forEach((sx, si) => {
+        const sh = new THREE.Mesh(shelfGeo, trimWoodMat);
+        sh.position.set(sx, 1.48, -d / 2 + 0.14);
+        sh.castShadow = true;
+        root.add(sh);
+        for (let j = 0; j < 2; j++) {
+          const jx = sx - 0.30 + j * 0.28;
+          const jar = new THREE.Mesh(jarGeo, mats.glossy(jarColors[(si * 2 + j) % jarColors.length], 0.25, 0.08));
+          jar.position.set(jx, 1.63, -d / 2 + 0.14);
+          const lid = new THREE.Mesh(lidGeo, mats.metallic('#eab308', 0.22, 0.78));
+          lid.position.set(jx, 1.75, -d / 2 + 0.14);
+          root.add(jar, lid);
+        }
+        // Stacked crisp white ceramic plates on outer half of shelf
+        for (let p = 0; p < 3; p++) {
+          const pl = new THREE.Mesh(plateGeo, mats.glossy('#fffbf0', 0.22, 0.06));
+          pl.position.set(sx + 0.34, 1.54 + p * 0.042, -d / 2 + 0.14);
+          root.add(pl);
+        }
+      });
+    }
+
+    // Warm Interior Baseboard Trim along Back Wall for crisp floor-wall grounding
+    const baseboard = new THREE.Mesh(
+      getGeo(geos, `env_bbrd_${w}`, () => createRoundedBoxGeometry(w, 0.14, 0.08, 1, 0.02)),
+      trimWoodMat,
+    );
+    baseboard.position.set(0, 0.10, -d / 2 + 0.03);
+    root.add(baseboard);
+
     // Scalloped Striped Awning + Marquee Sign + Connected Fairy String Lights
     root.add(buildScallopedAwning(w, wallH, -d / 2, template.themeRoofColor, mats, geos));
-    root.add(buildMarqueeSignboard(template, w, wallH + 0.62, -d / 2 + 0.05, mats, geos, textures));
-    root.add(buildFairyStringLights(w, wallH, -d / 2 + 1.18, mats, geos, animatedProps));
+    root.add(buildMarqueeSignboard(template, w, wallH + 0.56, -d / 2 + 0.05, mats, geos, textures));
+    root.add(buildFairyStringLights(w, wallH - 0.04, -d / 2 + 0.78, mats, geos, animatedProps));
 
     // Corner Planter Trees (for city & orchard venues; on drive_thru keep all foliage safely behind winZ!)
     const useDefaultTrees =
@@ -1868,45 +1906,222 @@ export function buildEnvironmentRig(
       for (const [tx, tz] of treeCoords) {
         root.add(buildPlumpPlanterTree(tx, tz, mats, geos, shadowTex, withApples));
       }
-      // Side hedges (shifted behind winZ on drive_thru so zero planters/hedges touch the road curb)
+      // Side hedges with colorful blossoms (shifted behind winZ on drive_thru so zero planters/hedges touch the road curb)
       const hedgeGeo = getGeo(geos, 'env_hedge', () => createRoundedBoxGeometry(0.75, 0.68, 2.2, 2, 0.28));
-      const hedgeMat = mats.glossy('#22c55e', 0.48, 0.03);
+      const hedgeMat = mats.glossy('#22c55e', 0.44, 0.03);
+      const hedgeBlosGeo = getGeo(geos, 'env_hblos', () => new THREE.SphereGeometry(0.11, 8, 6));
       const hedgeZ = isDriveThru ? sideCenterZ : 0;
       for (const s of [-1, 1]) {
         const hdg = new THREE.Mesh(hedgeGeo, hedgeMat);
         hdg.position.set(s * (w / 2 + 1.15), 0.34, hedgeZ);
         hdg.castShadow = true;
         root.add(hdg);
+        for (let b = 0; b < 3; b++) {
+          const fl = new THREE.Mesh(
+            hedgeBlosGeo,
+            mats.glossy(b % 2 === 0 ? '#fb7185' : '#fde047', 0.3, 0.05),
+          );
+          fl.position.set(s * (w / 2 + 1.10), 0.66, hedgeZ - 0.65 + b * 0.65);
+          root.add(fl);
+        }
       }
     }
 
-    // Front Sidewalk, Welcome Mat & Cozy Streetlamps (non-drive_thru)
+    // Front Sidewalk / Threshold Apron + Daytime City Street, Crosswalk, Bench, A-Frame Sign & Flower Boxes
     if (template.archetype !== 'drive_thru') {
-      const sidewalk = new THREE.Mesh(
-        getGeo(geos, `env_swalk_${w}`, () => createRoundedBoxGeometry(w + 16, 0.08, 2.5, 1, 0.04)),
-        mats.glossy(theme.isWaterGround ? '#a16207' : '#e2ded5', 0.62, 0.03),
-      );
-      sidewalk.position.set(0, -0.02, d / 2 + 1.55);
-      sidewalk.receiveShadow = true;
+      const isSunnyCityStreet =
+        !theme.isWaterGround &&
+        !theme.isNightVenue &&
+        theme.themeId !== 'adventure_olympus';
 
+      // Woven Striped Welcome Mat with Gold Border at Doorway (all non-drive-thru venues)
+      const matBorder = new THREE.Mesh(
+        getGeo(geos, 'env_wmat_brd', () => createRoundedBoxGeometry(2.96, 0.04, 1.26, 1, 0.04)),
+        mats.glossy(theme.isNightVenue ? '#334155' : '#78350f', 0.58, 0.04),
+      );
+      matBorder.position.set(0, 0.036, d / 2 - 0.55);
       const matMesh = new THREE.Mesh(
-        getGeo(geos, 'env_wmat', () => createRoundedBoxGeometry(2.8, 0.05, 1.15, 1, 0.04)),
-        mats.glossy(template.themeAccentColor, 0.55, 0.04),
+        getGeo(geos, 'env_wmat', () => createRoundedBoxGeometry(2.74, 0.05, 1.08, 1, 0.04)),
+        mats.glossy(template.themeAccentColor, 0.52, 0.04),
       );
       matMesh.position.set(0, 0.045, d / 2 - 0.55);
-      root.add(sidewalk, matMesh);
+      root.add(matBorder, matMesh);
 
-      const lampPostGeo = getGeo(geos, 'env_lpost', () => new THREE.CylinderGeometry(0.055, 0.08, 2.5, 8));
-      const lampGlobeGeo = getGeo(geos, 'env_lglb', () => new THREE.SphereGeometry(0.20, 10, 8));
-      const ironMat = mats.metallic('#334155', 0.36, 0.65);
-      const glowMat = mats.emissiveGlow('#fde68a', 0.92, 0.16);
-      for (const s of [-1, 1]) {
-        const lp = new THREE.Mesh(lampPostGeo, ironMat);
-        lp.position.set(s * (w / 2 + 1.25), 1.25, d / 2 + 0.55);
-        lp.castShadow = true;
-        const glb = new THREE.Mesh(lampGlobeGeo, glowMat);
-        glb.position.set(s * (w / 2 + 1.25), 2.60, d / 2 + 0.55);
-        root.add(lp, glb);
+      if (isSunnyCityStreet) {
+        const paverTex = textures?.createSidewalkPavers(Math.max(4, Math.round((w + 16) / 2.2)), 1) ?? null;
+        const sidewalkMat = paverTex
+          ? mats.textured(`env_swalk_pav_${w}`, paverTex, { color: '#ffffff', roughness: 0.64, sceneScoped: false })
+          : mats.glossy('#e6dfd1', 0.62, 0.03);
+        const sidewalk = new THREE.Mesh(
+          getGeo(geos, `env_swalk_${w}`, () => createRoundedBoxGeometry(w + 16, 0.12, 2.65, 1, 0.04)),
+          sidewalkMat,
+        );
+        sidewalk.position.set(0, -0.02, d / 2 + 1.62);
+        sidewalk.receiveShadow = true;
+        root.add(sidewalk);
+
+        // Raised sidewalk stone curb lip
+        const curbLip = new THREE.Mesh(
+          getGeo(geos, `env_swcurb_${w}`, () => createRoundedBoxGeometry(w + 16, 0.15, 0.24, 1, 0.05)),
+          mats.glossy('#d6cfc0', 0.56, 0.04),
+        );
+        curbLip.position.set(0, -0.005, d / 2 + 2.95);
+        curbLip.receiveShadow = true;
+        root.add(curbLip);
+
+        // Foreground Sunlit Asphalt Street + Crisp Pedestrian Crosswalk + Gapped Yellow Lane Dashes
+        const roadTex = textures?.createAsphaltStreet(Math.max(5, Math.round((w + 22) / 3.2))) ?? null;
+        const roadMat = roadTex
+          ? mats.textured(`env_street_${w}`, roadTex, { color: '#ffffff', roughness: 0.78, sceneScoped: false })
+          : mats.matte('#525b6d', 0.85, 0.03);
+        const street = new THREE.Mesh(
+          getGeo(geos, `env_street_mesh_${w}`, () => createRoundedBoxGeometry(w + 22, 0.06, 4.2, 1, 0.02)),
+          roadMat,
+        );
+        street.position.set(0, -0.065, d / 2 + 5.15);
+        street.receiveShadow = true;
+        root.add(street);
+
+        // Crisp white zebra crosswalk stripes right in front of the entrance
+        const xwGeo = getGeo(geos, 'env_xw_stripe', () => createRoundedBoxGeometry(0.46, 0.02, 2.55, 1, 0.008));
+        const xwMat = mats.glossy('#fffbf0', 0.48, 0.02);
+        for (let i = -2; i <= 2; i++) {
+          const stripe = new THREE.Mesh(xwGeo, xwMat);
+          stripe.position.set(i * 0.82, -0.03, d / 2 + 4.95);
+          stripe.receiveShadow = true;
+          root.add(stripe);
+        }
+
+        // Yellow dashed lane line cleanly skipping the crosswalk zone (|x| >= 2.85)
+        const dashXs: number[] = [];
+        for (let dx = 3.05; dx <= w / 2 + 8; dx += 2.05) {
+          dashXs.push(-dx, dx);
+        }
+        if (dashXs.length > 0) {
+          const rdDashGeo = getGeo(geos, 'env_rd_dash', () => createRoundedBoxGeometry(1.12, 0.018, 0.16, 1, 0.006));
+          const rdDashes = new THREE.InstancedMesh(rdDashGeo, mats.glossy('#fde047', 0.45, 0.04), dashXs.length);
+          const dd = new THREE.Object3D();
+          for (let i = 0; i < dashXs.length; i++) {
+            dd.position.set(dashXs[i], -0.028, d / 2 + 4.95);
+            dd.updateMatrix();
+            rdDashes.setMatrixAt(i, dd.matrix);
+          }
+          rdDashes.instanceMatrix.needsUpdate = true;
+          root.add(rdDashes);
+        }
+
+        // Cozy Terracotta Flower Boxes flanking front entrance wall (strictly clear of doorway x ∈ [-1.6, +1.6])
+        const potBoxGeo = getGeo(geos, 'env_epot', () => createRoundedBoxGeometry(1.55, 0.42, 0.50, 2, 0.07));
+        const potSoilGeo = getGeo(geos, 'env_eshrub', () => createRoundedBoxGeometry(1.38, 0.30, 0.38, 2, 0.12));
+        const potBloomGeo = getGeo(geos, 'env_ebloom', () => new THREE.SphereGeometry(0.115, 8, 6));
+        const potMat = mats.glossy('#c2613b', 0.46, 0.04);
+        const potLeafMat = mats.glossy('#22c55e', 0.44, 0.03);
+        for (const side of [-1, 1]) {
+          const fx = side * Math.max(2.65, w * 0.30);
+          const fz = d / 2 + 0.62;
+          const pBox = new THREE.Mesh(potBoxGeo, potMat);
+          pBox.position.set(fx, 0.22, fz);
+          pBox.castShadow = true;
+          pBox.receiveShadow = true;
+          const pShrub = new THREE.Mesh(potSoilGeo, potLeafMat);
+          pShrub.position.set(fx, 0.48, fz);
+          pShrub.castShadow = true;
+          root.add(pBox, pShrub);
+          const bColors = ['#fb7185', '#fde047', '#f97316', '#c084fc'];
+          for (let bi = 0; bi < 4; bi++) {
+            const bl = new THREE.Mesh(potBloomGeo, mats.glossy(bColors[(bi + (side > 0 ? 1 : 0)) % 4], 0.28, 0.05));
+            bl.position.set(fx - 0.48 + bi * 0.32, 0.64 + (bi % 2) * 0.04, fz + (bi % 2 === 0 ? 0.06 : -0.05));
+            root.add(bl);
+          }
+        }
+
+        // Slatted Wooden Park Bench on Left Sidewalk (visibly framing portrait foreground!)
+        const benchX = -Math.max(3.4, w * 0.36);
+        const benchZ = d / 2 + 2.02;
+        const benchWood = mats.glossy('#b46b3a', 0.44, 0.05);
+        const ironMat = mats.metallic('#334155', 0.36, 0.65);
+        const benchGroup = new THREE.Group();
+        benchGroup.position.set(benchX, 0.04, benchZ);
+        const bSeat = new THREE.Mesh(
+          getGeo(geos, 'env_bnch_seat', () => createRoundedBoxGeometry(1.65, 0.09, 0.52, 1, 0.03)),
+          benchWood,
+        );
+        bSeat.position.set(0, 0.38, 0);
+        bSeat.castShadow = true;
+        const bBack = new THREE.Mesh(
+          getGeo(geos, 'env_bnch_back', () => createRoundedBoxGeometry(1.65, 0.40, 0.08, 1, 0.03)),
+          benchWood,
+        );
+        bBack.position.set(0, 0.66, -0.22);
+        bBack.rotation.x = -0.15;
+        bBack.castShadow = true;
+        const bLegGeo = getGeo(geos, 'env_bnch_leg', () => createRoundedBoxGeometry(0.10, 0.42, 0.48, 1, 0.02));
+        for (const lx of [-0.66, 0.66]) {
+          const leg = new THREE.Mesh(bLegGeo, ironMat);
+          leg.position.set(lx, 0.21, 0);
+          benchGroup.add(leg);
+        }
+        benchGroup.add(bSeat, bBack);
+        root.add(benchGroup);
+
+        // Cute Wooden A-Frame Sidewalk Chalkboard Menu on Right Sidewalk
+        const signGroup = new THREE.Group();
+        signGroup.position.set(Math.max(3.15, w * 0.33), 0.04, d / 2 + 1.85);
+        signGroup.rotation.y = -0.35;
+        const signPanel = new THREE.Mesh(
+          getGeo(geos, 'env_aframe', () => createRoundedBoxGeometry(0.76, 0.92, 0.14, 1, 0.03)),
+          mats.textured(`sw_aframe_${template.id}`, menuTex, {
+            color: menuTex ? '#ffffff' : '#24323f',
+            roughness: 0.46,
+            sceneScoped: true,
+          }),
+        );
+        signPanel.position.y = 0.48;
+        signPanel.castShadow = true;
+        const signFrame = new THREE.Mesh(
+          getGeo(geos, 'env_aframe_rim', () => createRoundedBoxGeometry(0.84, 0.10, 0.20, 1, 0.03)),
+          benchWood,
+        );
+        signFrame.position.y = 0.96;
+        signGroup.add(signPanel, signFrame);
+        root.add(signGroup);
+
+        // Ornate Vintage Streetlamps tucked neatly inside portrait frame on sidewalk corners
+        const lampBaseGeo = getGeo(geos, 'env_lbase', () => new THREE.CylinderGeometry(0.15, 0.20, 0.36, 10));
+        const lampPostGeo = getGeo(geos, 'env_lpost', () => new THREE.CylinderGeometry(0.055, 0.085, 2.35, 8));
+        const lampGlobeGeo = getGeo(geos, 'env_lglb', () => new THREE.SphereGeometry(0.22, 10, 8));
+        const lampCapGeo = getGeo(geos, 'env_lcap', () => new THREE.ConeGeometry(0.26, 0.18, 10));
+        const glowMat = mats.emissiveGlow('#fef08a', 0.95, 0.14);
+        for (const s of [-1, 1]) {
+          const lx = s * (w / 2 + 0.48);
+          const lz = d / 2 + 1.05;
+          const lb = new THREE.Mesh(lampBaseGeo, ironMat);
+          lb.position.set(lx, 0.20, lz);
+          const lp = new THREE.Mesh(lampPostGeo, ironMat);
+          lp.position.set(lx, 1.35, lz);
+          lp.castShadow = true;
+          const glb = new THREE.Mesh(lampGlobeGeo, glowMat);
+          glb.position.set(lx, 2.64, lz);
+          const lcap = new THREE.Mesh(lampCapGeo, ironMat);
+          lcap.position.set(lx, 2.86, lz);
+          root.add(lb, lp, glb, lcap);
+        }
+      } else {
+        // Themed entrance threshold apron for Cavern / Lunar / Potion / Pier / Olympus venues
+        const apronColor = theme.isWaterGround
+          ? '#8b5e34'
+          : theme.themeId === 'adventure_olympus'
+            ? '#e7e0d2'
+            : theme.themeId === 'event_potion_shop'
+              ? '#432b61'
+              : '#334155';
+        const apron = new THREE.Mesh(
+          getGeo(geos, `env_apron_${w}`, () => createRoundedBoxGeometry(w + 2.4, 0.10, 2.2, 1, 0.05)),
+          mats.glossy(apronColor, 0.62, 0.05),
+        );
+        apron.position.set(0, -0.03, d / 2 + 1.25);
+        apron.receiveShadow = true;
+        root.add(apron);
       }
     }
 
@@ -1929,7 +2144,7 @@ export function buildEnvironmentRig(
       // Decorative vertical front slats via InstancedMesh (1 draw call!)
       const slatCount = Math.max(8, Math.floor(counterLen / 0.48));
       const slatGeo = getGeo(geos, 'cs_slat', () => createRoundedBoxGeometry(0.14, 0.56, 0.06, 1, 0.02));
-      const slats = new THREE.InstancedMesh(slatGeo, mats.std('#9a6235', 0.55, 0.04), slatCount);
+      const slats = new THREE.InstancedMesh(slatGeo, mats.std('#9a6235', 0.52, 0.04), slatCount);
       const dummy = new THREE.Object3D();
       for (let i = 0; i < slatCount; i++) {
         const sx = -counterLen / 2 + 0.35 + (i / (slatCount - 1)) * (counterLen - 0.7);
@@ -1939,6 +2154,20 @@ export function buildEnvironmentRig(
       }
       slats.instanceMatrix.needsUpdate = true;
       root.add(slats);
+
+      // Bottom recessed wood kick-plate & brass foot rail along counter front
+      const counterKick = new THREE.Mesh(
+        getGeo(geos, `cs_kick_${w}`, () => createRoundedBoxGeometry(counterLen + 0.04, 0.12, 0.84, 1, 0.03)),
+        mats.std('#6b4226', 0.56, 0.04),
+      );
+      counterKick.position.set(0, 0.07, 0.72);
+      const footRail = new THREE.Mesh(
+        getGeo(geos, `cs_frail_${w}`, () => new THREE.CylinderGeometry(0.026, 0.026, counterLen - 0.3, 8)),
+        mats.metallic('#eab308', 0.22, 0.82),
+      );
+      footRail.rotation.z = Math.PI / 2;
+      footRail.position.set(0, 0.14, 1.18);
+      root.add(counterKick, footRail);
 
       // Glossy marble countertop (top surface y = 0.79, flush beneath tip shadow y = 0.80!)
       const marbleTex = textures?.createMarbleCounter('#fffbf4') ?? null;

@@ -5,9 +5,9 @@ import type { EventDifficulty, Rarity, RestaurantTier } from '@/types/game';
  * Zero balance magic numbers are permitted inside UI components.
  */
 export const BALANCE = {
-  // Station exponential upgrade curves (validated by headless multi-city bot simulator)
-  STATION_COST_GROWTH: 1.148,
-  STATION_PROFIT_GROWTH: 1.086,
+  // Station exponential upgrade curves (calibrated to authentic Eatventure pacing via headless multi-city simulator)
+  STATION_COST_GROWTH: 1.182,
+  STATION_PROFIT_GROWTH: 1.070,
 
   // Milestone levels granting major profit jumps + 1 Gem each
   MILESTONE_LEVELS: [10, 25, 50, 75, 100, 150, 200, 250, 350, 500, 650, 800, 1000] as const,
@@ -51,11 +51,11 @@ export const BALANCE = {
   GREEDY_ORDER_MIN: 8,
   GREEDY_ORDER_MAX: 11,
 
-  // Base timings (seconds)
-  BASE_ORDER_TAKE_TIME: 1.0,
-  BASE_CUSTOMER_SPAWN_INTERVAL: 1.4,
-  BASE_WORKER_WALK_SPEED: 3.0, // world units / sec
-  BASE_CUSTOMER_WALK_SPEED: 2.2,
+  // Base timings (seconds) — deliberate starting rhythm so speed/cook upgrades feel genuinely impactful
+  BASE_ORDER_TAKE_TIME: 1.25,
+  BASE_CUSTOMER_SPAWN_INTERVAL: 1.85,
+  BASE_WORKER_WALK_SPEED: 2.25, // world units / sec
+  BASE_CUSTOMER_WALK_SPEED: 1.85,
   PET_CATCHUP_SPEED_BONUS: 1.25,
 
   // Tips & Offline earnings

@@ -131,16 +131,19 @@ describe('Phase 3 & 4: Economy Math, Large Numbers, Payout Pipeline & City Cycle
     expect(ctrl.save.boxes.small).toBeGreaterThan(1);
   });
 
-  it('passes headless multi-restaurant & full city cycle economy balance simulation without stalling', () => {
+  it('passes headless multi-restaurant & full city cycle economy balance simulation with authentic Eatventure pacing', () => {
     const beginnerRun = runEconomyBot({
       policy: 'balanced',
-      targetRestaurants: 2,
-      maxSecondsPerRestaurant: 600,
+      targetRestaurants: 3,
+      maxSecondsPerRestaurant: 720,
       seed: 1337,
     });
-    expect(beginnerRun.restaurantsCleared).toBe(2);
+    expect(beginnerRun.restaurantsCleared).toBe(3);
     expect(beginnerRun.metrics[0].completed).toBe(true);
-    expect(beginnerRun.metrics[0].clearTimeSec).toBeLessThan(180);
+    // Authentic Eatventure Venue 1 pacing: deliberate ~4-7 min unboosted (never trivial <3 min or stalled >8 min)
+    expect(beginnerRun.metrics[0].clearTimeSec).toBeGreaterThanOrEqual(240);
+    expect(beginnerRun.metrics[0].clearTimeSec).toBeLessThan(480);
+    expect(beginnerRun.metrics[0].maxGapBetweenPurchasesSec).toBeLessThan(30);
 
     const veteranFullCity = runEconomyBot({
       policy: 'geared_veteran',

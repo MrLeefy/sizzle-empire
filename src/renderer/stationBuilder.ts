@@ -137,7 +137,7 @@ function buildApplianceUnit(
       pressGroup.add(shaft, lever, knob);
       animatedPart = pressGroup;
 
-      // Brass front spout + waiting cup
+      // Brass front spout + waiting cup with cheerful straw
       const spout = new THREE.Mesh(
         getGeo(geos, 'stn_jui_spout', () => new THREE.CylinderGeometry(0.03, 0.035, 0.16, 8)),
         brassMat,
@@ -149,8 +149,40 @@ function buildApplianceUnit(
         creamMat,
       );
       cup.position.set(0, 0.08, 0.42);
+      const straw = new THREE.Mesh(
+        getGeo(geos, 'stn_jui_straw', () => new THREE.CylinderGeometry(0.012, 0.012, 0.16, 6)),
+        mats.glossy('#fb7185', 0.25, 0.05),
+      );
+      straw.position.set(0.03, 0.19, 0.42);
+      straw.rotation.z = -0.25;
 
-      unit.add(base, juiceCore, citrus, tankGlass, cap, pressGroup, spout, cup);
+      // Mini butcher-block cutting board + fresh lemon halves on left of juicer (strictly inside unit footprint!)
+      const board = new THREE.Mesh(
+        getGeo(geos, 'stn_jui_brd', () => createRoundedBoxGeometry(0.28, 0.035, 0.24, 1, 0.015)),
+        mats.glossy('#c68642', 0.44, 0.04),
+      );
+      board.position.set(-0.46, 0.02, 0.10);
+      const lemonHalf = new THREE.Mesh(
+        getGeo(geos, 'stn_jui_lem', () => new THREE.SphereGeometry(0.075, 10, 8)),
+        mats.glossy('#facc15', 0.26, 0.06),
+      );
+      lemonHalf.scale.set(1.2, 0.8, 0.9);
+      lemonHalf.position.set(-0.46, 0.075, 0.09);
+
+      // Stacked colorful serving cups on right of juicer
+      const stackCup = new THREE.Mesh(
+        getGeo(geos, 'stn_jui_scup', () => new THREE.CylinderGeometry(0.08, 0.065, 0.22, 10)),
+        mats.glossy('#fb923c', 0.28, 0.06),
+      );
+      stackCup.position.set(0.45, 0.11, 0.08);
+      const stackRim = new THREE.Mesh(
+        getGeo(geos, 'stn_jui_srim', () => new THREE.TorusGeometry(0.08, 0.014, 6, 12)),
+        creamMat,
+      );
+      stackRim.rotation.x = Math.PI / 2;
+      stackRim.position.set(0.45, 0.21, 0.08);
+
+      unit.add(base, juiceCore, citrus, tankGlass, cap, pressGroup, spout, cup, straw, board, lemonHalf, stackCup, stackRim);
       break;
     }
 
@@ -978,7 +1010,7 @@ export function buildStationRig(
   counterLip.castShadow = true;
   counterLip.receiveShadow = true;
 
-  // Front drawer seam + cute chrome bar handle
+  // Front drawer seam + dual brass drawer knobs + recessed wood kick-plate + raised rear backsplash rail
   const drawerPanel = new THREE.Mesh(
     getGeo(geos, 'stn_drawer', () => createRoundedBoxGeometry(1.06, 0.34, 0.04, 1, 0.02)),
     mats.glossy('#f3e8d8', 0.36, 0.05),
@@ -986,12 +1018,24 @@ export function buildStationRig(
   drawerPanel.position.set(0, 0.48, 0.62);
   const drawerHandle = new THREE.Mesh(
     getGeo(geos, 'stn_handle', () => new THREE.CapsuleGeometry(0.025, 0.32, 4, 6)),
-    mats.metallic('#e2e8f0', 0.18, 0.82),
+    mats.metallic('#eab308', 0.20, 0.84),
   );
   drawerHandle.rotation.z = Math.PI / 2;
   drawerHandle.position.set(0, 0.52, 0.66);
 
-  unlockedMachine.add(cabinet, counterLip, drawerPanel, drawerHandle);
+  const plinth = new THREE.Mesh(
+    getGeo(geos, 'stn_plinth', () => createRoundedBoxGeometry(1.48, 0.10, 1.20, 1, 0.03)),
+    mats.std('#8b5a34', 0.52, 0.04),
+  );
+  plinth.position.y = 0.06;
+
+  const backsplash = new THREE.Mesh(
+    getGeo(geos, 'stn_bspl', () => createRoundedBoxGeometry(1.54, 0.12, 0.07, 1, 0.025)),
+    mats.glossy(tpl.accentColor, 0.28, 0.10),
+  );
+  backsplash.position.set(0, 0.96, -0.60);
+
+  unlockedMachine.add(cabinet, counterLip, drawerPanel, drawerHandle, plinth, backsplash);
 
   // Multi-machine extension wings (total width = 2.28, halfX = 1.14, hidden when machines === 1)
   const extensionWings = new THREE.Group();

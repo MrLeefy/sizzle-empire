@@ -186,11 +186,11 @@ export const THRESHOLDS = {
   rafMedianDeltaMsMain: 1800,
   jsFrameMedianMaxMs: 35,
 
-  // Timing budgets (calibrated for post-M2 SwiftShader PMREM + 2048 shadows & rawDt <= 0.25s clamp)
+  // Timing budgets (calibrated for post-M2 SwiftShader PMREM + 2048 shadows, rawDt clamp, and authentic Eatventure Lv 1 pacing)
   bootTimeoutMs: 40000,
   organicDeliveryTimeoutMs: 50000,
-  organicCashUpgradeTimeoutMsMain: 55000,
-  organicCashUpgradeTimeoutMsStandalone: 35000,
+  organicCashUpgradeTimeoutMsMain: 100000,
+  organicCashUpgradeTimeoutMsStandalone: 70000,
   standaloneSavePollTimeoutMs: 8500,
 };
 

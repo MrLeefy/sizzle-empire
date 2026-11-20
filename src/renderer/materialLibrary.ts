@@ -666,8 +666,8 @@ export class TextureFactory {
     if (!surface) return null;
     const { canvas, ctx } = surface;
 
-    const tileA = shiftHexColor(baseHex, 0.055, 0.02);
-    const tileB = shiftHexColor(baseHex, -0.065, 0.04);
+    const tileA = shiftHexColor(baseHex, 0.08, 0.04);
+    const tileB = shiftHexColor(baseHex, -0.095, 0.07);
     const half = 128;
 
     ctx.fillStyle = '#fff9ee';
@@ -679,21 +679,25 @@ export class TextureFactory {
         const y = row * half;
         const fill = (row + col) % 2 === 0 ? tileA : tileB;
         ctx.fillStyle = fill;
-        ctx.fillRect(x + 3, y + 3, half - 6, half - 6);
+        ctx.fillRect(x + 4, y + 4, half - 8, half - 8);
 
-        // Soft glossy ceramic corner sheen
+        // Crisp inner bevel & glossy ceramic corner sheen
         const grad = ctx.createLinearGradient(x + 6, y + 6, x + half - 10, y + half - 10);
-        grad.addColorStop(0, 'rgba(255, 255, 255, 0.28)');
-        grad.addColorStop(0.45, 'rgba(255, 255, 255, 0.04)');
-        grad.addColorStop(1, 'rgba(61, 35, 20, 0.06)');
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.36)');
+        grad.addColorStop(0.45, 'rgba(255, 255, 255, 0.05)');
+        grad.addColorStop(1, 'rgba(61, 35, 20, 0.11)');
         ctx.fillStyle = grad;
         ctx.fillRect(x + 5, y + 5, half - 10, half - 10);
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 6, y + 6, half - 12, half - 12);
       }
     }
 
-    // Warm cream grout grid
-    ctx.strokeStyle = 'rgba(255, 250, 240, 0.78)';
-    ctx.lineWidth = 6;
+    // Warm espresso-tinted grout lines for readable crisp diorama tiles
+    ctx.strokeStyle = 'rgba(138, 106, 76, 0.42)';
+    ctx.lineWidth = 5;
     ctx.strokeRect(0, 0, 256, 256);
     ctx.beginPath();
     ctx.moveTo(half, 0);
@@ -707,6 +711,90 @@ export class TextureFactory {
       sceneScoped: true,
       repeatX: rx,
       repeatY: rz,
+    });
+  }
+
+  /**
+   * 1b. Sunlit beveled flagstone / cobblestone sidewalk pavers (shared pooled texture).
+   */
+  createSidewalkPavers(repeatX: number, repeatZ: number): THREE.CanvasTexture | null {
+    const rx = Math.max(1, Math.round(repeatX));
+    const rz = Math.max(1, Math.round(repeatZ));
+    const key = `swalk_pav_${rx}_${rz}`;
+    const existing = this.shared.get(key);
+    if (existing) return existing;
+
+    const surface = this.makeCanvas(256, 256);
+    if (!surface) return null;
+    const { canvas, ctx } = surface;
+
+    ctx.fillStyle = '#c8bfb0';
+    ctx.fillRect(0, 0, 256, 256);
+
+    const rows = 4;
+    const cols = 4;
+    const pw = 256 / cols;
+    const ph = 256 / rows;
+    const tones = ['#ebe4d6', '#e3dac9', '#efe8dc', '#ddd3c0'];
+    for (let r = 0; r < rows; r++) {
+      const stagger = (r % 2) * (pw * 0.5);
+      for (let c = -1; c <= cols; c++) {
+        const x = c * pw + stagger;
+        const y = r * ph;
+        ctx.fillStyle = tones[(r * 3 + Math.abs(c)) % tones.length];
+        ctx.fillRect(x + 3, y + 3, pw - 6, ph - 6);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.32)';
+        ctx.fillRect(x + 4, y + 4, pw - 8, 5);
+        ctx.fillStyle = 'rgba(80, 62, 46, 0.14)';
+        ctx.fillRect(x + 4, y + ph - 7, pw - 8, 4);
+      }
+    }
+
+    return this.finalizeTexture(canvas, {
+      key,
+      sceneScoped: false,
+      repeatX: rx,
+      repeatY: rz,
+    });
+  }
+
+  /**
+   * 1c. Stylized warm asphalt street with crisp dashed road markings (shared pooled texture).
+   */
+  createAsphaltStreet(repeatX: number): THREE.CanvasTexture | null {
+    const rx = Math.max(1, Math.round(repeatX));
+    const key = `street_asph_${rx}`;
+    const existing = this.shared.get(key);
+    if (existing) return existing;
+
+    const surface = this.makeCanvas(256, 256);
+    if (!surface) return null;
+    const { canvas, ctx } = surface;
+
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, '#5d6678');
+    grad.addColorStop(0.5, '#525b6d');
+    grad.addColorStop(1, '#495163');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
+
+    // Subtle aggregate speckles
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    for (let i = 0; i < 90; i++) {
+      const sx = (i * 73) % 256;
+      const sy = (i * 137) % 256;
+      ctx.fillRect(sx, sy, 3, 3);
+    }
+
+    // Crisp sunny road shoulder stripe (center dashes placed in 3D so they cleanly gap around crosswalk!)
+    ctx.fillStyle = 'rgba(255, 251, 240, 0.72)';
+    ctx.fillRect(0, 12, 256, 7);
+
+    return this.finalizeTexture(canvas, {
+      key,
+      sceneScoped: false,
+      repeatX: rx,
+      repeatY: 1,
     });
   }
 
@@ -729,15 +817,15 @@ export class TextureFactory {
     const { canvas, ctx } = surface;
 
     const plankH = 64;
-    const shifts = [0.03, -0.025, 0.015, -0.04];
+    const shifts = [0.045, -0.04, 0.025, -0.055];
 
     for (let i = 0; i < 4; i++) {
       const y = i * plankH;
-      ctx.fillStyle = shiftHexColor(baseHex, shifts[i], 0.02);
+      ctx.fillStyle = shiftHexColor(baseHex, shifts[i], 0.05);
       ctx.fillRect(0, y, 256, plankH);
 
-      // Subtle flowing grain strokes
-      ctx.strokeStyle = 'rgba(90, 59, 34, 0.14)';
+      // Flowing grain strokes
+      ctx.strokeStyle = 'rgba(90, 59, 34, 0.18)';
       ctx.lineWidth = 2;
       for (let g = 0; g < 4; g++) {
         const gy = y + 10 + g * 14;
@@ -749,9 +837,9 @@ export class TextureFactory {
 
       // Satin highlight band
       const sheen = ctx.createLinearGradient(0, y, 0, y + plankH);
-      sheen.addColorStop(0, 'rgba(255, 252, 240, 0.18)');
+      sheen.addColorStop(0, 'rgba(255, 252, 240, 0.24)');
       sheen.addColorStop(0.5, 'rgba(255, 252, 240, 0)');
-      sheen.addColorStop(1, 'rgba(61, 35, 20, 0.10)');
+      sheen.addColorStop(1, 'rgba(61, 35, 20, 0.14)');
       ctx.fillStyle = sheen;
       ctx.fillRect(0, y, 256, plankH);
 
