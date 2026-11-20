@@ -283,33 +283,35 @@ export function synthesizeTargetPose(
 
   switch (input.activity) {
     case 'walk': {
+      // Smooth, grounded glide: quick little steps, a gentle sinusoidal bob (no hop cusps),
+      // light hip sway and relaxed arm swing.
       const s = Math.sin(state.walkPhase);
       const c = Math.cos(state.walkPhase);
-      const absC = Math.abs(c);
-      const stride = clamp(0.5 + speed * 0.08, 0.5, 0.82);
+      // 0..1, peaks twice per stride but is a pure cosine, so it never "kinks" like |cos|
+      const bob = 0.5 - 0.5 * Math.cos(state.walkPhase * 2);
+      const stride = clamp(0.38 + speed * 0.04, 0.38, 0.55);
       out.lLegX = s * stride;
       out.rLegX = -s * stride;
-      // Highest at mid-stance (legs vertical), lowest at heel contact: two bounces per cycle.
-      out.bodyY = absC * 0.1;
-      out.squash = 1 + (absC - 0.55) * 0.07;
-      out.bodyPitch = clamp(0.06 + speed * 0.025, 0.06, 0.2);
-      out.bodyRoll = s * 0.085;
-      out.bodyYaw = s * 0.09;
-      out.headRoll = -s * 0.06;
-      out.headPitch = -0.05 - absC * 0.03;
+      out.bodyY = bob * 0.022;
+      out.squash = 1;
+      out.bodyPitch = clamp(0.04 + speed * 0.01, 0.04, 0.08);
+      out.bodyRoll = s * 0.03;
+      out.bodyYaw = s * 0.035;
+      out.headRoll = -s * 0.015;
+      out.headPitch = -0.03;
       if (input.carrying) {
-        out.lArmX = -1.28 + c * 0.04;
-        out.rArmX = -1.28 - c * 0.04;
+        out.lArmX = -1.28 + c * 0.02;
+        out.rArmX = -1.28 - c * 0.02;
         out.lArmZ = 0.16;
         out.rArmZ = -0.16;
-        out.bodyPitch *= 0.4;
-        out.trayY = absC * 0.025;
-        out.trayRoll = s * 0.06;
+        out.bodyPitch *= 0.5;
+        out.trayY = bob * 0.006;
+        out.trayRoll = s * 0.015;
       } else {
-        out.lArmX = -s * 0.7;
-        out.rArmX = s * 0.7;
-        out.lArmZ = 0.18 + absC * 0.06;
-        out.rArmZ = -0.18 - absC * 0.06;
+        out.lArmX = -s * 0.42;
+        out.rArmX = s * 0.42;
+        out.lArmZ = 0.14;
+        out.rArmZ = -0.14;
       }
       out.browRaise = 0.15;
       break;
@@ -499,7 +501,7 @@ export function stepCharacterPose(
 
   // 2. Walk phase only advances while walking (phase-clean, never world-coupled)
   if (input.activity === 'walk') {
-    const rate = clamp(speed * 3.6, 9, 24);
+    const rate = clamp(speed * 4.2, 7, 15);
     state.walkPhase = (state.walkPhase + dt * rate) % TWO_PI;
     // Footfall = |sin| peaks; detect the crossing of the contact threshold
     const contact = Math.abs(Math.sin(state.walkPhase)) > 0.96 ? 1 : 0;
@@ -534,12 +536,12 @@ export function stepCharacterPose(
   const dFacing = wrapAngle((Number.isFinite(facing) ? facing : 0) - state.prevFacing);
   state.prevFacing = Number.isFinite(facing) ? facing : 0;
   const turnRate = dt > 1e-4 ? dFacing / dt : 0;
-  const leanTarget = input.activity === 'walk' ? clamp(-turnRate * 0.05, -0.2, 0.2) : 0;
-  state.turnLean += (leanTarget - state.turnLean) * (1 - Math.exp(-10 * dt));
+  const leanTarget = input.activity === 'walk' ? clamp(-turnRate * 0.025, -0.08, 0.08) : 0;
+  state.turnLean += (leanTarget - state.turnLean) * (1 - Math.exp(-5 * dt));
   out.bodyRoll += state.turnLean;
 
   // 6. Footfall squash
-  if (state.landPulse > 0) {
+  if (state.landPulse > 0 && input.activity !== 'walk') {
     out.squash -= state.landPulse * 0.06;
   }
 
@@ -582,8 +584,8 @@ export function stepCharacterPose(
     state.hatSpringVel,
     clamp(state.headSpringPos * 1.6 + out.bodyRoll * 0.6, -0.4, 0.4),
     dt,
-    150,
-    7,
+    120,
+    13,
   );
   out.headPitch += state.headSpringPos;
 

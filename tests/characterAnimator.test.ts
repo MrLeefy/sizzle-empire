@@ -52,13 +52,16 @@ describe('characterAnimator — pose-blended chibi animation', () => {
     expect(customerActivityFor('waiting_for_food', false, false)).toBe('idle');
   });
 
-  it('walks with opposed legs/arms and a double bounce per stride', () => {
+  it('walks with opposed legs/arms and a gentle, smooth (cusp-free) body bob', () => {
     const st = createCharacterPoseState(1.3, 'walk');
     let sawOpposed = false;
     let minY = Infinity;
     let maxY = -Infinity;
+    const ys: number[] = [];
     for (let i = 0; i < 120; i++) {
       const p = stepCharacterPose(st, input('walk', i / 60), 0);
+      ys.push(p.bodyY);
+      expect(p.squash).toBe(1);
       if (Math.abs(p.lLegX) > 0.3) {
         expect(Math.sign(p.lLegX)).toBe(-Math.sign(p.rLegX));
         expect(Math.sign(p.lArmX)).toBe(-Math.sign(p.lLegX));
@@ -68,7 +71,12 @@ describe('characterAnimator — pose-blended chibi animation', () => {
       maxY = Math.max(maxY, p.bodyY);
     }
     expect(sawOpposed).toBe(true);
-    expect(maxY - minY).toBeGreaterThan(0.05);
+    expect(maxY - minY).toBeGreaterThan(0.01);
+    expect(maxY - minY).toBeLessThan(0.04);
+    // No hop-like kinks: frame-to-frame acceleration of the bob stays tiny once blended in
+    for (let i = 40; i < ys.length - 1; i++) {
+      expect(Math.abs(ys[i + 1] - 2 * ys[i] + ys[i - 1])).toBeLessThan(0.0015);
+    }
   });
 
   it('cross-fades between activities without snapping (cook -> walk)', () => {
