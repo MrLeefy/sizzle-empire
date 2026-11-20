@@ -1409,6 +1409,18 @@ export class SceneRenderer {
       anim.prevRenderZ = iz;
 
       let targetFacing = w.facing;
+      if (w.status === 'cooking' && w.activeStationIndex !== null) {
+        // Face the machine squarely while cooking (sim facing is the last walk direction = sideways)
+        const cookStn = runtime.stations[w.activeStationIndex];
+        if (cookStn) {
+          const fx = cookStn.worldPos.x - w.pos.x;
+          const fz = cookStn.worldPos.z - w.pos.z;
+          // Snap to the machine's front/back axis so chefs never stand side-on to it
+          targetFacing = Math.abs(fz) > 0.05 ? (fz < 0 ? Math.PI : 0) : Math.atan2(fx, fz);
+        }
+      } else if (w.status === 'idle') {
+        targetFacing = 0; // idle staff turn to face the player/camera
+      }
       if (w.status === 'taking_order' && w.activeCustomerId) {
         const targetCust = runtime.customers.find((c) => c.id === w.activeCustomerId);
         if (targetCust) {
@@ -1904,9 +1916,11 @@ export class SceneRenderer {
     const cookingByStation = new Map<number, ProjectedCookingSlot[]>();
     for (const w of runtime.workers) {
       if (w.status !== 'cooking' || w.activeStationIndex === null) continue;
-      const wx = w.prevPos.x + (w.pos.x - w.prevPos.x) * alpha;
-      const wz = w.prevPos.z + (w.pos.z - w.prevPos.z) * alpha;
-      const slotProj = this.projectToScreen(wx, 2.55, wz); // floats above the chef hat
+      const wrig = this.workerRigs.get(w.id);
+      const wx = wrig ? wrig.root.position.x : w.pos.x;
+      const wz = wrig ? wrig.root.position.z : w.pos.z;
+      // Timer floats clear above the chef's hat so it never covers the face or body
+      const slotProj = this.projectToScreen(wx, 2.7, wz);
       if (!slotProj.visible) continue;
       let list = cookingByStation.get(w.activeStationIndex);
       if (!list) {
@@ -1929,7 +1943,7 @@ export class SceneRenderer {
         : null;
 
     const stations: ProjectedStationBadge[] = runtime.stations.map((stn) => {
-      const p = this.projectToScreen(stn.worldPos.x, 1.98, stn.worldPos.z);
+      const p = this.projectToScreen(stn.worldPos.x, 2.25, stn.worldPos.z - 0.65);
       const slots = cookingByStation.get(stn.index);
       const pulse = Math.max(0, Math.min(1, this.stationUpgradePulses[stn.index] ?? 0));
       return {
@@ -1942,6 +1956,22 @@ export class SceneRenderer {
         ...(pulse > 0.001 ? { justUpgradedPulse: pulse } : {}),
       };
     });
+
+    // Keep the player chef always visible: overlays over this screen rect turn see-through
+    const occluders: ProjectedOverlayFrame['occluders'] = [];
+    const player = runtime.workers.find((w) => w.role === 'player');
+    if (player) {
+      const prig = this.workerRigs.get(player.id);
+      const px = prig ? prig.root.position.x : player.pos.x;
+      const pz = prig ? prig.root.position.z : player.pos.z;
+      const feet = this.projectToScreen(px, 0, pz);
+      const top = this.projectToScreen(px, 2.2, pz);
+      if (feet.visible || top.visible) {
+        const h = Math.max(8, feet.y - top.y);
+        const halfW = h * 0.32;
+        occluders.push({ x0: feet.x - halfW, y0: top.y, x1: feet.x + halfW, y1: feet.y });
+      }
+    }
 
     const orders: ProjectedOverlayFrame['orders'] = [];
     for (const c of runtime.customers) {
@@ -2009,7 +2039,7 @@ export class SceneRenderer {
       });
     }
 
-    return { stations, orders, tips, floating };
+    return { stations, orders, tips, floating, occluders };
   }
 
   dispose(): void {

@@ -309,6 +309,14 @@ textarea {
   will-change: transform;
 }
 
+/* Bubbles/badges/timers overlapping the player chef fade so the chef always stays visible */
+.wo-anchor {
+  transition: opacity 140ms ease-out;
+}
+.wo-anchor.wo-see-through {
+  opacity: 0.22;
+}
+
 .wo-cook-anchor { z-index: 2; }
 .wo-station-anchor { z-index: 3; }
 .wo-order-anchor { z-index: 4; }

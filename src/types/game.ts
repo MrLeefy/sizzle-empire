@@ -76,6 +76,7 @@ export interface RestaurantUpgradeTemplate {
     | 'add_table'
     | 'add_machine'
     | 'station_profit'
+    | 'station_speed'
     | 'global_profit'
     | 'worker_speed'
     | 'cook_speed';

@@ -49,50 +49,6 @@ export function countPassedMilestones(level: number, maxLevel: number): number {
   return count;
 }
 
-export type MilestoneRewardKind = 'speed' | 'profit';
-
-/** Reward of the n-th (0-based) milestone threshold: even = Speed ×2, odd = Profit ×2. */
-export function getMilestoneRewardKind(milestoneIndex: number): MilestoneRewardKind {
-  return milestoneIndex % 2 === 0 ? 'speed' : 'profit';
-}
-
-function countPassedMilestonesOfKind(
-  level: number,
-  maxLevel: number,
-  kind: MilestoneRewardKind,
-): number {
-  let count = 0;
-  let idx = 0;
-  for (const m of BALANCE.MILESTONE_LEVELS) {
-    if (m > maxLevel) break;
-    if (level >= m && getMilestoneRewardKind(idx) === kind) count++;
-    idx++;
-  }
-  return count;
-}
-
-/** Station cook-speed multiplier earned from passed Speed milestones (1, 2, 4, ...). */
-export function getStationSpeedMultiplier(level: number, maxLevel: number): number {
-  return Math.pow(
-    BALANCE.MILESTONE_SPEED_MULTIPLIER,
-    countPassedMilestonesOfKind(Math.max(1, level), maxLevel, 'speed'),
-  );
-}
-
-/** Next milestone level and what it grants, or null once all are passed. */
-export function getNextMilestoneReward(
-  level: number,
-  maxLevel: number,
-): { level: number; kind: MilestoneRewardKind } | null {
-  let idx = 0;
-  for (const m of BALANCE.MILESTONE_LEVELS) {
-    if (m > maxLevel) break;
-    if (level < m) return { level: m, kind: getMilestoneRewardKind(idx) };
-    idx++;
-  }
-  return null;
-}
-
 /**
  * Seconds one dish takes at this station for a given cook-speed multiplier
  * (worker/player bonuses × restaurant upgrades × station speed milestones).
@@ -103,10 +59,9 @@ export function getStationCookSeconds(
   maxLevel: number,
   cookSpeedMult: number,
 ): number {
-  const mult =
-    Math.max(0.05, cookSpeedMult) *
-    Math.max(0.05, station.speedMultiplier || 1) *
-    getStationSpeedMultiplier(station.level, maxLevel);
+  void maxLevel;
+  // Station speed comes from per-station "prep speed" items in the Upgrades list (station.speedMultiplier)
+  const mult = Math.max(0.05, cookSpeedMult) * Math.max(0.05, station.speedMultiplier || 1);
   return Math.max(0.15, stationTpl.basePrepTime / mult);
 }
 
@@ -311,7 +266,7 @@ export function getStationBaseDishProfit(
   restaurantGlobalProfitMult: number,
 ): Decimal {
   const lv = Math.max(1, station.level);
-  const milestonesPassed = countPassedMilestonesOfKind(lv, maxLevel, 'profit');
+  const milestonesPassed = countPassedMilestones(lv, maxLevel);
   const milestoneMult = Decimal.pow(BALANCE.MILESTONE_MULTIPLIER_PER_THRESHOLD, milestonesPassed);
 
   return d(stationTpl.baseRevenue)

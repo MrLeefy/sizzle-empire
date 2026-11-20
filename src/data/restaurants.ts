@@ -124,6 +124,30 @@ function buildUpgrades(
       });
     }
 
+    // Per-dish production speed (Eatventure-style "prep speed" items in the Upgrades list)
+    upgrades.push({
+      id: nextId('spd2'),
+      name: `Quick ${stn.name}`,
+      description: `${stn.name} cooks 2× faster`,
+      icon: '⚡',
+      cost: Math.round(anchor * 4.5),
+      kind: 'station_speed',
+      stationIndex: sIdx,
+      value: 2,
+    });
+    if (seed.tier !== 'mini_kiosk') {
+      upgrades.push({
+        id: nextId('spd2b'),
+        name: `Turbo ${stn.name}`,
+        description: `${stn.name} cooks 2× faster`,
+        icon: '⚡',
+        cost: Math.round(anchor * 40),
+        kind: 'station_speed',
+        stationIndex: sIdx,
+        value: 2,
+      });
+    }
+
     upgrades.push({
       id: nextId('prof3'),
       name: `Artisan ${stn.name}`,

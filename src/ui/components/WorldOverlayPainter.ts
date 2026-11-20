@@ -27,6 +27,7 @@ interface AnchorTrackable {
   lastX: number;
   lastY: number;
   lastVisible: boolean;
+  lastSeeThrough?: boolean;
 }
 
 interface StationPlanCacheEntry {
@@ -229,6 +230,23 @@ export class WorldOverlayPainter {
     }
   }
 
+  private occluders: NonNullable<ProjectedOverlayFrame['occluders']> = [];
+
+  /** Turns an overlay see-through while its approximate screen rect overlaps the player chef. */
+  private applySeeThrough(node: AnchorTrackable, x0: number, y0: number, x1: number, y1: number): void {
+    let hit = false;
+    for (const r of this.occluders) {
+      if (x0 < r.x1 && x1 > r.x0 && y0 < r.y1 && y1 > r.y0) {
+        hit = true;
+        break;
+      }
+    }
+    if (node.lastSeeThrough !== hit) {
+      node.lastSeeThrough = hit;
+      node.anchor.classList.toggle('wo-see-through', hit);
+    }
+  }
+
   paint(frame: ProjectedOverlayFrame): void {
     if (this.disposed) return;
 
@@ -250,6 +268,7 @@ export class WorldOverlayPainter {
     const nowMs = performance.now();
 
     let parsedCash: Decimal | null = null;
+    this.occluders = frame.occluders ?? [];
 
     this.seenStations.clear();
     this.seenCookPies.clear();
@@ -363,6 +382,8 @@ export class WorldOverlayPainter {
         setAnchorVisible(node, false);
       } else {
         setAnchorVisible(node, true);
+        // Badge: centred above its anchor (translate -50%, -100%)
+        this.applySeeThrough(node, s.x - 40, s.y - 32, s.x + 40, s.y);
 
         const isMax = stn.unlocked && stn.level >= maxLv;
         const isPopular =
@@ -536,6 +557,8 @@ export class WorldOverlayPainter {
         continue;
       }
       setAnchorVisible(node, true);
+      // Speech balloon: centred above its anchor (translate -50%, -100%)
+      this.applySeeThrough(node, o.x - 34, o.y - 40, o.x + 34, o.y);
 
       const isOrdering = o.orderingProgress !== null || o.status === 'ordering';
       const status: ResolvedOrderStatus = isOrdering

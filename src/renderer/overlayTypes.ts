@@ -17,8 +17,18 @@ export interface ProjectedStationBadge {
   justUpgradedPulse?: number; // 0..1 spring decay
 }
 
+/** Screen-space rectangle of a character that overlays must never hide (e.g. the player chef). */
+export interface ProjectedOccluderRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 export interface ProjectedOverlayFrame {
   stations: ProjectedStationBadge[];
+  /** Characters to keep visible: overlapping bubbles/badges turn see-through. */
+  occluders?: ProjectedOccluderRect[];
   orders: Array<{
     customerId: string;
     x: number;

@@ -5,7 +5,6 @@ import { d, formatMoney } from '@/engine/economy/bigNumber';
 import {
   countPassedMilestones,
   getNextMilestone,
-  getNextMilestoneReward,
   getPreviousMilestone,
   getStationCookSeconds,
   getStationBaseDishProfit,
@@ -104,7 +103,6 @@ export const StationPopover: React.FC<StationPopoverProps> = ({
     maxLv,
     runtime.cookSpeedMult * stats.playerCookSpeedMult,
   );
-  const nextReward = getNextMilestoneReward(stn.level, maxLv);
 
   const nextMs = getNextMilestone(stn.level, maxLv);
   const prevMs = getPreviousMilestone(stn.level, maxLv);
@@ -185,8 +183,7 @@ export const StationPopover: React.FC<StationPopoverProps> = ({
             <span className="popover-milestone-pill tabular-nums">
               {nextMs !== null ? (
                 <>
-                  <SparkleIcon size={12} /> Lv {nextMs}:{' '}
-                  {nextReward?.kind === 'speed' ? 'Speed ×2' : 'Profit ×2'} +1 <GemIcon size={12} />
+                  <SparkleIcon size={12} /> Lv {nextMs}: Profit ×2 +1 <GemIcon size={12} />
                 </>
               ) : (
                 <>

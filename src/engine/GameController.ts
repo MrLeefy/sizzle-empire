@@ -19,7 +19,6 @@ import { d, serializeDecimal } from './economy/bigNumber';
 import {
   calculateOfflineEarnings,
   countPassedMilestones,
-  getStationSpeedMultiplier,
   getRestaurantCompletionPercent,
   getRestaurantUpgradeCost,
   getStationMaxLevel,
@@ -613,7 +612,6 @@ export class GameController {
       });
     } else {
       const prevMilestones = countPassedMilestones(stn.level, maxLv);
-      const prevSpeedMult = getStationSpeedMultiplier(stn.level, maxLv);
       stn.level = Math.min(maxLv, stn.level + plan.levelsToBuy);
       const newMilestones = countPassedMilestones(stn.level, maxLv);
       const gainedMilestones = Math.max(0, newMilestones - prevMilestones);
@@ -629,9 +627,7 @@ export class GameController {
         this.sound.play('milestone');
         void this.native.impact('medium');
         this.sim.pushFeedback(runtime, {
-          text: `${
-            getStationSpeedMultiplier(stn.level, maxLv) > prevSpeedMult ? '⚡ SPEED ×2' : '×2 PROFIT'
-          }! +${gemsEarned}💎`,
+          text: `×2 PROFIT! +${gemsEarned}💎`,
           subtext: `Lv ${stn.level} Milestone`,
           worldPos: { ...stn.worldPos },
           heightOffset: 2.0,
@@ -762,6 +758,12 @@ export class GameController {
       }
       case 'cook_speed': {
         runtime.cookSpeedMult += upg.value;
+        break;
+      }
+      case 'station_speed': {
+        if (upg.stationIndex !== undefined && runtime.stations[upg.stationIndex]) {
+          runtime.stations[upg.stationIndex].speedMultiplier *= upg.value;
+        }
         break;
       }
     }

@@ -13,14 +13,11 @@ export const BALANCE = {
   MILESTONE_LEVELS: [10, 25, 50, 75, 100, 150, 200, 250, 350, 500, 650, 800, 1000] as const,
   MILESTONE_MULTIPLIER_PER_THRESHOLD: 2.0,
   MILESTONE_GEM_REWARD: 1,
-  // Milestones alternate rewards: 1st (Lv 10), 3rd, 5th... = SPEED ×2 (cook time halved),
-  // 2nd, 4th, 6th... = PROFIT ×2. Upgrading a machine visibly makes it cook faster.
-  MILESTONE_SPEED_MULTIPLIER: 2.0,
 
   // Deliberate, readable cook times: each dish takes several seconds with a visible timer,
   // and per-dish revenue scales up so earnings stay on the calibrated pacing curve.
   PREP_TIME_SCALE: 3.0,
-  PREP_REVENUE_SCALE: 2.3,
+  PREP_REVENUE_SCALE: 1.4,
 
   // Station max level defaults by restaurant tier
   TIER_MAX_LEVEL: {
