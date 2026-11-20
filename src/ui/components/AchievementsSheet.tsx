@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
 import type { GameController } from '@/engine/GameController';
 import type { AchievementCategory } from '@/types/game';
 import { ACHIEVEMENTS, CHEF_RANKS } from '@/data/achievements';
 import { getCurrentChefRank, getTotalAchievementStars } from '@/engine/meta/achievements';
+import { CheckIcon, CloseIcon, GemIcon, SparkleIcon, TrophyIcon } from './CartoonIcons';
 
 interface AchievementsSheetProps {
   controller: GameController;
@@ -25,24 +25,47 @@ export const AchievementsSheet: React.FC<AchievementsSheetProps> = ({ controller
   const totalStars = getTotalAchievementStars(save);
   const currentRank = getCurrentChefRank(save);
 
+  const switchTab = (next: AchievementCategory | 'ranks') => {
+    if (tab !== next) {
+      controller.playUiSound('tab');
+      setTab(next);
+    }
+  };
+
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div
+      className="sheet-backdrop"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+    >
       <div className="sheet-panel" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-header">
           <div className="sheet-title">
-            🏆 {currentRank.title} · ★ {totalStars}
+            <TrophyIcon size={22} />
+            <span>{currentRank.title}</span>
+            <span className="header-resource-pill tabular-nums">
+              <SparkleIcon size={14} /> {totalStars}
+            </span>
           </div>
-          <button className="icon-btn" style={{ width: 32, height: 32 }} onClick={onClose}>
-            <X size={16} />
+          <button
+            type="button"
+            className="icon-btn close-btn"
+            onClick={onClose}
+            aria-label="Close achievements"
+          >
+            <CloseIcon size={16} />
           </button>
         </div>
 
         <div className="sheet-tabs">
           {CATS.map((c) => (
             <button
+              type="button"
               key={c.id}
               className={`sheet-tab ${tab === c.id ? 'active' : ''}`}
-              onClick={() => setTab(c.id)}
+              onClick={() => switchTab(c.id)}
             >
               {c.label}
             </button>
@@ -56,23 +79,33 @@ export const AchievementsSheet: React.FC<AchievementsSheetProps> = ({ controller
                 const ready = totalStars >= rank.requiredStars && !claimed;
                 return (
                   <div className="item-card" key={rank.rank}>
-                    <div>
-                      <strong>
+                    <div className="min-w-0">
+                      <strong className="card-title text-ink">
                         Rank {rank.rank}: {rank.title}
                       </strong>
-                      <div style={{ fontSize: 11, color: '#facc15' }}>
-                        Requires ★ {rank.requiredStars} · {rank.gems}💎
+                      <div className="card-sub text-gold tabular-nums">
+                        Requires ★ {rank.requiredStars} · {rank.gems} Gems
                         {rank.smallBoxes > 0 ? ` · ${rank.smallBoxes} Small Crates` : ''}
                         {rank.bigBoxes > 0 ? ` · ${rank.bigBoxes} Grand Crates` : ''}
-                        {rank.petFood > 0 ? ` · ${rank.petFood}🍖` : ''}
+                        {rank.petFood > 0 ? ` · ${rank.petFood} Treats` : ''}
                       </div>
                     </div>
                     <button
-                      className={ready ? 'pill-btn gold' : 'pill-btn ghost'}
+                      type="button"
+                      className={ready ? 'pill-btn gold sm' : 'pill-btn ghost sm'}
                       disabled={!ready}
                       onClick={() => controller.claimRank(rank.rank)}
                     >
-                      {claimed ? 'Claimed ✓' : ready ? 'Claim' : `★ ${rank.requiredStars}`}
+                      {claimed ? (
+                        <>
+                          <span>Claimed</span>
+                          <CheckIcon size={14} />
+                        </>
+                      ) : ready ? (
+                        'Claim'
+                      ) : (
+                        `★ ${rank.requiredStars}`
+                      )}
                     </button>
                   </div>
                 );
@@ -87,25 +120,39 @@ export const AchievementsSheet: React.FC<AchievementsSheetProps> = ({ controller
 
                 return (
                   <div className="item-card-col" key={ach.id}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <strong>
-                          {ach.name} (Tier {Math.min(claimedIdx + 1, ach.tiers.length)}/{ach.tiers.length})
+                    <div className="row-between">
+                      <div className="min-w-0">
+                        <strong className="card-title text-ink">
+                          {ach.name} (Tier {Math.min(claimedIdx + 1, ach.tiers.length)}/
+                          {ach.tiers.length})
                         </strong>
-                        <div style={{ fontSize: 11, color: '#b8b2d0' }}>
-                          {ach.description}: {progress.toLocaleString()} / {tier.goal.toLocaleString()}
+                        <div className="card-sub text-muted tabular-nums">
+                          {ach.description}: {progress.toLocaleString()} /{' '}
+                          {tier.goal.toLocaleString()}
                         </div>
                       </div>
                       <button
-                        className={canClaim ? 'pill-btn gold' : 'pill-btn ghost'}
+                        type="button"
+                        className={canClaim ? 'pill-btn gold sm' : 'pill-btn ghost sm'}
                         disabled={!canClaim}
                         onClick={() => controller.claimAchievement(ach.id)}
                       >
-                        {isComplete ? 'Done ★' : `+${tier.gems}💎 +${ach.starsPerTier}★`}
+                        {isComplete ? (
+                          <>
+                            <span>Done</span>
+                            <CheckIcon size={14} />
+                          </>
+                        ) : (
+                          <>
+                            <span>+{tier.gems}</span>
+                            <GemIcon size={13} />
+                            <span>+{ach.starsPerTier}★</span>
+                          </>
+                        )}
                       </button>
                     </div>
-                    <div className="progress-track">
-                      <div className="progress-fill" style={{ width: `${pct}%` }} />
+                    <div className="progress-track candy-striped">
+                      <div className="progress-fill candy-fill" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 );

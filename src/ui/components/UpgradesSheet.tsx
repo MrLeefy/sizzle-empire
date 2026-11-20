@@ -1,8 +1,8 @@
 import React from 'react';
-import { X } from 'lucide-react';
 import type { GameController } from '@/engine/GameController';
 import { d, formatMoney } from '@/engine/economy/bigNumber';
 import { getRestaurantUpgradeCost } from '@/engine/economy/economy';
+import { BoltIcon, CloseIcon, SparkleIcon } from './CartoonIcons';
 
 interface UpgradesSheetProps {
   controller: GameController;
@@ -34,27 +34,42 @@ export const UpgradesSheet: React.FC<UpgradesSheetProps> = ({ controller, onClos
   };
 
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div
+      className="sheet-backdrop"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+    >
       <div className="sheet-panel" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-header">
-          <div className="sheet-title">⚡ Restaurant Upgrades ({available.length} left)</div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div className="sheet-title">
+            <BoltIcon size={22} />
+            <span>Restaurant Upgrades ({available.length} left)</span>
+          </div>
+          <div className="row-center-tight">
             {affordableCount > 1 && (
-              <button className="pill-btn gold" onClick={buyAllAffordable}>
+              <button type="button" className="pill-btn gold sm" onClick={buyAllAffordable}>
                 Buy All ({affordableCount})
               </button>
             )}
-            <button className="icon-btn" style={{ width: 32, height: 32 }} onClick={onClose}>
-              <X size={16} />
+            <button
+              type="button"
+              className="icon-btn close-btn"
+              onClick={onClose}
+              aria-label="Close upgrades"
+            >
+              <CloseIcon size={16} />
             </button>
           </div>
         </div>
 
         <div className="sheet-body">
           {available.length === 0 ? (
-            <div className="item-card-col" style={{ textAlign: 'center', color: '#b8b2d0' }}>
-              <strong>All unlocked restaurant upgrades purchased!</strong>
-              <span style={{ fontSize: 12 }}>
+            <div className="item-card-col empty-card text-muted">
+              <SparkleIcon size={28} />
+              <strong className="text-ink">All unlocked restaurant upgrades purchased!</strong>
+              <span className="text-md">
                 Unlock additional food stations to reveal more upgrades.
               </span>
             </div>
@@ -63,16 +78,22 @@ export const UpgradesSheet: React.FC<UpgradesSheetProps> = ({ controller, onClos
               const cost = getRestaurantUpgradeCost(u, cityNum, runtime.difficultyMultiplier);
               const canBuy = cash.gte(cost);
               return (
-                <div className="item-card" key={u.id}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 24 }}>{u.icon}</span>
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: 13 }}>{u.name}</div>
-                      <div style={{ fontSize: 11, color: '#b8b2d0' }}>{u.description}</div>
+                <div
+                  className={`item-card ${canBuy ? 'upgrade-affordable' : 'upgrade-locked'}`}
+                  key={u.id}
+                >
+                  <div className="row-center min-w-0">
+                    <div className={`card-icon-medallion ${canBuy ? 'medallion-ready' : ''}`}>
+                      {u.icon}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="card-title text-ink">{u.name}</div>
+                      <div className="card-sub text-muted">{u.description}</div>
                     </div>
                   </div>
                   <button
-                    className="pill-btn"
+                    type="button"
+                    className="pill-btn tabular-nums"
                     disabled={!canBuy}
                     onClick={() => controller.purchaseRestaurantUpgrade(u.id)}
                   >

@@ -9,15 +9,15 @@ const config: CapacitorConfig = {
     cleartext: false,
   },
   android: {
-    backgroundColor: '#1b1426',
+    backgroundColor: '#5CC8FF',
     allowMixedContent: false,
     captureInput: true,
     webContentsDebuggingEnabled: false,
   },
   plugins: {
     StatusBar: {
-      style: 'DARK',
-      backgroundColor: '#1b1426',
+      style: 'LIGHT',
+      backgroundColor: '#5CC8FF',
       overlaysWebView: true,
     },
   },

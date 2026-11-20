@@ -19,7 +19,7 @@ export interface NativeLifecycleHandlers {
  * Handles:
  *  - App lifecycle (pause -> immediate atomic save, resume -> offline earnings calculation)
  *  - Hardware back button modal stack
- *  - Portrait orientation lock & edge-to-edge dark status bar
+ *  - Portrait orientation lock & edge-to-edge bright sky status bar
  *  - Optional tactile haptics
  *  - Google Play Integrity attestation hook for verified Android competitive leaderboards
  */
@@ -61,8 +61,8 @@ export class CapacitorBridge {
     if (!Capacitor.isNativePlatform()) return;
 
     try {
-      await StatusBar.setStyle({ style: Style.Dark });
-      await StatusBar.setBackgroundColor({ color: '#1b1426' });
+      await StatusBar.setStyle({ style: Style.Light });
+      await StatusBar.setBackgroundColor({ color: '#5CC8FF' });
     } catch {
       // Safe no-op if unavailable
     }

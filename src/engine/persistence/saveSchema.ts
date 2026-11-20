@@ -1,4 +1,4 @@
-import type { GameSaveData, PlayerStatsCounters } from '@/types/game';
+import type { GameSaveData, PlayerStatsCounters, SettingsState } from '@/types/game';
 import { getCityByNumber } from '@/data/cities';
 import { getRestaurantTemplate } from '@/data/restaurants';
 import { createInitialRestaurantRuntime } from '@/engine/sim/restaurantSim';
@@ -7,6 +7,21 @@ import { createGearInstance } from '@/engine/meta/equipment';
 import { hashString } from '@/engine/anticheat/verifier';
 
 export const CURRENT_SAVE_SCHEMA_VERSION = 2;
+
+export const DEFAULT_SFX_VOLUME = 0.85;
+export const DEFAULT_AMBIENT_ENABLED = true;
+export const DEFAULT_AMBIENT_VOLUME = 0.35;
+
+function sanitizeVolumeSetting(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.min(1, Math.max(0, value));
+}
+
+function asPlainRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
 
 export interface SaveEnvelope {
   schemaVersion: number;
@@ -131,6 +146,9 @@ export function createNewGameSave(seed = 0x51a2e7d3, nowMs = Date.now()): GameSa
       buyMode: '1',
       bulkStep: 50,
       cameraZoom: 1.0,
+      sfxVolume: DEFAULT_SFX_VOLUME,
+      ambientEnabled: DEFAULT_AMBIENT_ENABLED,
+      ambientVolume: DEFAULT_AMBIENT_VOLUME,
     },
     lastCheckpointHash: 'genesis',
   };
@@ -178,7 +196,7 @@ export function validateAndMigrateEnvelope(raw: unknown): GameSaveData | null {
     data.events = data.events ?? fresh.events;
     data.social = data.social ?? fresh.social;
     data.boost = data.boost ?? fresh.boost;
-    data.settings = { ...fresh.settings, ...(data.settings as object ?? {}) };
+    data.settings = { ...fresh.settings, ...asPlainRecord(data.settings) };
     data.boxes = { ...fresh.boxes, ...(data.boxes as object ?? {}) };
     data.stats = { ...fresh.stats, ...(data.stats as object ?? {}) };
     data.lastCheckpointHash = data.lastCheckpointHash ?? 'genesis';
@@ -193,7 +211,20 @@ export function validateAndMigrateEnvelope(raw: unknown): GameSaveData | null {
   // Ensure transient worker/customer structures remain valid on reload
   migrated.stats = { ...fresh.stats, ...migrated.stats };
   migrated.boxes = { ...fresh.boxes, ...migrated.boxes };
-  migrated.settings = { ...fresh.settings, ...migrated.settings };
+  const mergedSettings: SettingsState = {
+    ...fresh.settings,
+    ...asPlainRecord(migrated.settings),
+  };
+  mergedSettings.sfxVolume = sanitizeVolumeSetting(mergedSettings.sfxVolume, DEFAULT_SFX_VOLUME);
+  mergedSettings.ambientVolume = sanitizeVolumeSetting(
+    mergedSettings.ambientVolume,
+    DEFAULT_AMBIENT_VOLUME,
+  );
+  mergedSettings.ambientEnabled =
+    typeof mergedSettings.ambientEnabled === 'boolean'
+      ? mergedSettings.ambientEnabled
+      : DEFAULT_AMBIENT_ENABLED;
+  migrated.settings = mergedSettings;
   migrated.schemaVersion = CURRENT_SAVE_SCHEMA_VERSION;
   return migrated;
 }

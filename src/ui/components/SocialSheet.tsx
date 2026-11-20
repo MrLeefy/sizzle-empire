@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { X, ShieldCheck, RefreshCw } from 'lucide-react';
 import type { GameController } from '@/engine/GameController';
 import type { ClubState } from '@/types/game';
 import { CLUB_SEASON_REWARDS, getClubMultiplierForLevel } from '@/data/events';
@@ -7,6 +6,15 @@ import { canAccessClubs } from '@/engine/social/clubService';
 import { BALANCE } from '@/engine/economy/balanceConfig';
 import { GEAR_BY_ID } from '@/data/gear';
 import type { LeaderboardSnapshot } from '@/engine/social/leaderboardService';
+import {
+  CheckIcon,
+  CloseIcon,
+  ClubIcon,
+  GemIcon,
+  LockIcon,
+  RefreshIcon,
+  ShieldCheckIcon,
+} from './CartoonIcons';
 
 interface SocialSheetProps {
   controller: GameController;
@@ -28,6 +36,13 @@ export const SocialSheet: React.FC<SocialSheetProps> = ({ controller, onClose })
   const club = save.social.club;
   const unlockedClubs = canAccessClubs(save);
 
+  const switchTab = (next: 'clubs' | 'leaderboard') => {
+    if (tab !== next) {
+      controller.playUiSound('tab');
+      setTab(next);
+    }
+  };
+
   const refreshBoard = async (div = division) => {
     const snap = await controller.socialClient.fetchLeaderboard(save, div);
     setBoard(snap);
@@ -47,9 +62,15 @@ export const SocialSheet: React.FC<SocialSheetProps> = ({ controller, onClose })
   const donateAllCommons = () => {
     const equippedIds = new Set(Object.values(save.equipped).filter(Boolean));
     const fodder = save.inventory
-      .filter((i) => !i.isBlueprint && !equippedIds.has(i.instanceId) && GEAR_BY_ID[i.templateId]?.rarity === 'common')
+      .filter(
+        (i) =>
+          !i.isBlueprint &&
+          !equippedIds.has(i.instanceId) &&
+          GEAR_BY_ID[i.templateId]?.rarity === 'common',
+      )
       .map((i) => i.instanceId);
     if (fodder.length === 0) {
+      controller.playUiSound('error');
       controller.pushToast('No spare Common gear to donate.', 'warning');
       return;
     }
@@ -61,20 +82,42 @@ export const SocialSheet: React.FC<SocialSheetProps> = ({ controller, onClose })
   };
 
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div
+      className="sheet-backdrop"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+    >
       <div className="sheet-panel" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-header">
-          <div className="sheet-title">🤝 Clubs & Verified Standings</div>
-          <button className="icon-btn" style={{ width: 32, height: 32 }} onClick={onClose}>
-            <X size={16} />
+          <div className="sheet-title">
+            <ClubIcon size={22} />
+            <span>Clubs &amp; Verified Standings</span>
+          </div>
+          <button
+            type="button"
+            className="icon-btn close-btn"
+            onClick={onClose}
+            aria-label="Close clubs"
+          >
+            <CloseIcon size={16} />
           </button>
         </div>
 
         <div className="sheet-tabs">
-          <button className={`sheet-tab ${tab === 'clubs' ? 'active' : ''}`} onClick={() => setTab('clubs')}>
+          <button
+            type="button"
+            className={`sheet-tab ${tab === 'clubs' ? 'active' : ''}`}
+            onClick={() => switchTab('clubs')}
+          >
             Clubs
           </button>
-          <button className={`sheet-tab ${tab === 'leaderboard' ? 'active' : ''}`} onClick={() => setTab('leaderboard')}>
+          <button
+            type="button"
+            className={`sheet-tab ${tab === 'leaderboard' ? 'active' : ''}`}
+            onClick={() => switchTab('leaderboard')}
+          >
             Leaderboards
           </button>
         </div>
@@ -83,96 +126,98 @@ export const SocialSheet: React.FC<SocialSheetProps> = ({ controller, onClose })
           {tab === 'clubs' && (
             <>
               {!unlockedClubs ? (
-                <div className="item-card-col" style={{ textAlign: 'center' }}>
-                  <strong>🔒 Clubs Unlock at City {BALANCE.CLUB_UNLOCK_CITY}</strong>
-                  <div style={{ fontSize: 12, color: '#b8b2d0' }}>
-                    You are currently in City {save.cityNumber}. Reach City {BALANCE.CLUB_UNLOCK_CITY} to found or join a 10-player Club, salvage spare gear for shared XP, and unlock up to ×2.0 Club All Profit + Mythic Club Crates!
+                <div className="item-card-col empty-card">
+                  <LockIcon size={28} />
+                  <strong className="text-ink">
+                    Clubs Unlock at City {BALANCE.CLUB_UNLOCK_CITY}
+                  </strong>
+                  <div className="card-sub text-muted">
+                    You are currently in City {save.cityNumber}. Reach City{' '}
+                    {BALANCE.CLUB_UNLOCK_CITY} to found or join a 10-player Club, salvage spare
+                    gear for shared XP, and unlock up to ×2.0 Club All Profit + Mythic Club Crates!
                   </div>
                 </div>
               ) : !club ? (
                 <>
                   <div className="item-card-col">
-                    <strong>Found a New Club (1,000 💎)</strong>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <strong className="card-title text-ink inline-icon-label">
+                      Found a New Club (1,000 <GemIcon size={14} />)
+                    </strong>
+                    <div className="row-gap">
                       <input
                         value={clubName}
                         onChange={(e) => setClubName(e.target.value)}
                         placeholder="Club Name"
-                        style={{
-                          flex: 2,
-                          padding: 8,
-                          borderRadius: 10,
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          background: '#130e1d',
-                          color: '#fff',
-                        }}
+                        className="cartoon-input flex-2"
                       />
                       <input
                         value={clubTag}
                         onChange={(e) => setClubTag(e.target.value)}
                         placeholder="TAG"
                         maxLength={4}
-                        style={{
-                          flex: 1,
-                          padding: 8,
-                          borderRadius: 10,
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          background: '#130e1d',
-                          color: '#fff',
-                        }}
+                        className="cartoon-input flex-1"
                       />
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div className="row-between">
+                      <label className="checkbox-label text-ink">
                         <input
                           type="checkbox"
                           checked={isPublic}
-                          onChange={(e) => setIsPublic(e.target.checked)}
+                          onChange={(e) => {
+                            controller.playUiSound('tap');
+                            setIsPublic(e.target.checked);
+                          }}
                         />
-                        Public Discovery
+                        <span>Public Discovery</span>
                       </label>
                       <button
-                        className="pill-btn gold"
+                        type="button"
+                        className="pill-btn gold sm"
                         onClick={() => {
                           const res = controller.foundClub(clubName, clubTag, isPublic);
-                          if (!res.ok && res.error) controller.pushToast(res.error, 'warning');
+                          if (!res.ok) {
+                            controller.playUiSound('error');
+                            if (res.error) controller.pushToast(res.error, 'warning');
+                          }
                         }}
                       >
-                        Create (1,000💎)
+                        <span>Create (1,000</span>
+                        <GemIcon size={13} />
+                        <span>)</span>
                       </button>
                     </div>
                   </div>
 
                   <div className="item-card-col">
-                    <strong>Join Club by ID</strong>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <strong className="card-title text-ink">Join Club by ID</strong>
+                    <div className="row-gap">
                       <input
                         value={joinId}
                         onChange={(e) => setJoinId(e.target.value)}
                         placeholder="CLB-XXXXXX"
-                        style={{
-                          flex: 1,
-                          padding: 8,
-                          borderRadius: 10,
-                          border: '1px solid rgba(255,255,255,0.2)',
-                          background: '#130e1d',
-                          color: '#fff',
-                        }}
+                        className="cartoon-input flex-1"
                       />
                       <button
-                        className="pill-btn blue"
+                        type="button"
+                        className="pill-btn blue sm"
                         onClick={async () => {
                           try {
-                            const r = await fetch(`/api/clubs?id=${encodeURIComponent(joinId.trim())}`);
+                            const r = await fetch(
+                              `/api/clubs?id=${encodeURIComponent(joinId.trim())}`,
+                            );
                             if (r.ok) {
                               const data = (await r.json()) as { club: ClubState };
                               const res = controller.joinClub(data.club);
-                              if (!res.ok && res.error) controller.pushToast(res.error, 'warning');
+                              if (!res.ok) {
+                                controller.playUiSound('error');
+                                if (res.error) controller.pushToast(res.error, 'warning');
+                              }
                               return;
                             }
                           } catch {
                             // Offline
                           }
+                          controller.playUiSound('error');
                           controller.pushToast('Club ID not found or offline.', 'warning');
                         }}
                       >
@@ -182,28 +227,39 @@ export const SocialSheet: React.FC<SocialSheetProps> = ({ controller, onClose })
                   </div>
 
                   <div className="item-card-col">
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <strong>Public Clubs Directory</strong>
-                      <span style={{ fontSize: 11, color: clubsOnline ? '#86efac' : '#b8b2d0' }}>
+                    <div className="row-between">
+                      <strong className="card-title text-ink">Public Clubs Directory</strong>
+                      <span className={`card-sub ${clubsOnline ? 'text-profit' : 'text-muted'}`}>
                         {clubsOnline ? 'Online' : 'Offline Mode'}
                       </span>
                     </div>
                     {discoveredClubs.length === 0 ? (
-                      <div style={{ fontSize: 12, color: '#b8b2d0' }}>
-                        No public clubs returned right now. Create your own club or reconnect online to discover active player clubs.
+                      <div className="card-sub text-muted">
+                        No public clubs returned right now. Create your own club or reconnect online
+                        to discover active player clubs.
                       </div>
                     ) : (
                       discoveredClubs.map((c) => (
                         <div className="item-card" key={c.id}>
-                          <div>
-                            <strong>
+                          <div className="min-w-0">
+                            <strong className="card-title text-ink">
                               [{c.tag}] {c.name}
                             </strong>
-                            <div style={{ fontSize: 11, color: '#b8b2d0' }}>
+                            <div className="card-sub text-muted tabular-nums">
                               Lv {c.level} · {c.members.length}/10 members
                             </div>
                           </div>
-                          <button className="pill-btn" onClick={() => controller.joinClub(c)}>
+                          <button
+                            type="button"
+                            className="pill-btn sm"
+                            onClick={() => {
+                              const res = controller.joinClub(c);
+                              if (!res.ok) {
+                                controller.playUiSound('error');
+                                if (res.error) controller.pushToast(res.error, 'warning');
+                              }
+                            }}
+                          >
                             Join
                           </button>
                         </div>
@@ -213,63 +269,85 @@ export const SocialSheet: React.FC<SocialSheetProps> = ({ controller, onClose })
                 </>
               ) : (
                 <>
-                  <div className="item-card-col" style={{ borderColor: '#38bdf8' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <strong>
+                  <div className="item-card-col card-accent-sky">
+                    <div className="row-between">
+                      <div className="min-w-0">
+                        <strong className="card-title text-ink">
                           [{club.tag}] {club.name}
                         </strong>
-                        <div style={{ fontSize: 11, color: '#b8b2d0' }}>
+                        <div className="card-sub text-muted tabular-nums">
                           ID: {club.id} · Season {club.seasonId} · {club.members.length}/10 Members
                         </div>
                       </div>
-                      <span className="rarity-tag mythic">
+                      <span className="rarity-tag mythic tabular-nums">
                         Lv {club.level} · ×{getClubMultiplierForLevel(club.level).toFixed(2)}
                       </span>
                     </div>
-                    <div style={{ fontSize: 12, color: '#86efac' }}>
+                    <div className="card-stat text-profit tabular-nums">
                       Total Season XP: {club.totalXp.toLocaleString()}
                     </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <button className="pill-btn gold" onClick={donateAllCommons}>
+                    <div className="btn-row">
+                      <button type="button" className="pill-btn gold sm" onClick={donateAllCommons}>
                         Salvage Spare Commons → Club XP
                       </button>
-                      <button className="pill-btn danger" onClick={() => controller.exitClub()}>
+                      <button
+                        type="button"
+                        className="pill-btn danger sm"
+                        onClick={() => {
+                          controller.playUiSound('tap');
+                          controller.exitClub();
+                        }}
+                      >
                         Leave Club
                       </button>
                     </div>
                   </div>
 
-                  <strong style={{ fontSize: 12 }}>Members</strong>
+                  <strong className="section-label text-muted">Members</strong>
                   {club.members.map((m) => (
                     <div className="item-card" key={m.playerId}>
-                      <div>
-                        <strong>{m.displayName}</strong>{' '}
-                        <span style={{ fontSize: 10, color: '#facc15' }}>{m.role.toUpperCase()}</span>
-                        <div style={{ fontSize: 11, color: '#b8b2d0' }}>City {m.cityNumber}</div>
+                      <div className="min-w-0">
+                        <strong className="card-title text-ink">{m.displayName}</strong>{' '}
+                        <span className="role-tag text-gold">{m.role.toUpperCase()}</span>
+                        <div className="card-sub text-muted">City {m.cityNumber}</div>
                       </div>
-                      <strong style={{ color: '#38bdf8' }}>{m.seasonXp.toLocaleString()} XP</strong>
+                      <strong className="text-sky tabular-nums">
+                        {m.seasonXp.toLocaleString()} XP
+                      </strong>
                     </div>
                   ))}
 
-                  <strong style={{ fontSize: 12 }}>Seasonal Milestones (Lv 2 → Lv 50)</strong>
+                  <strong className="section-label text-muted">
+                    Seasonal Milestones (Lv 2 → Lv 50)
+                  </strong>
                   {CLUB_SEASON_REWARDS.slice(0, 15).map((r) => {
                     const claimed = club.claimedLevels.includes(r.level);
                     const ready = club.level >= r.level && !claimed;
                     return (
                       <div className="item-card" key={r.level}>
-                        <div>
-                          <strong>Lv {r.level}</strong>: {r.label}
-                          <div style={{ fontSize: 10, color: '#b8b2d0' }}>
+                        <div className="min-w-0">
+                          <strong className="card-title text-ink">Lv {r.level}</strong>:{' '}
+                          <span className="text-ink">{r.label}</span>
+                          <div className="card-sub-xs text-muted tabular-nums">
                             {r.cumulativeXp.toLocaleString()} Total XP
                           </div>
                         </div>
                         <button
-                          className={ready ? 'pill-btn gold' : 'pill-btn ghost'}
+                          type="button"
+                          className={ready ? 'pill-btn gold sm' : 'pill-btn ghost sm'}
                           disabled={!ready}
                           onClick={() => controller.claimClubReward(r.level)}
                         >
-                          {claimed ? 'Claimed ✓' : ready ? 'Claim' : 'Locked'}
+                          {claimed ? (
+                            <>
+                              <span>Claimed</span>
+                              <CheckIcon size={14} />
+                            </>
+                          ) : ready ? (
+                            'Claim'
+                          ) : (
+                            'Locked'
+                          )}
                         </button>
                       </div>
                     );
@@ -282,17 +360,18 @@ export const SocialSheet: React.FC<SocialSheetProps> = ({ controller, onClose })
           {tab === 'leaderboard' && (
             <>
               <div className="item-card-col">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <ShieldCheck size={16} color="#22c55e" />
-                    <strong>
+                <div className="row-between">
+                  <div className="row-center-tight">
+                    <ShieldCheckIcon size={18} />
+                    <strong className="card-title text-ink">
                       Your Division: {save.social.leaderboardDivision.toUpperCase()}
                     </strong>
                   </div>
                   <button
-                    className="pill-btn blue"
-                    style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                    type="button"
+                    className="pill-btn blue sm"
                     onClick={async () => {
+                      controller.playUiSound('tap');
                       const res = await controller.submitLeaderboardCheckpoint();
                       controller.pushToast(
                         res.online
@@ -303,55 +382,59 @@ export const SocialSheet: React.FC<SocialSheetProps> = ({ controller, onClose })
                       await refreshBoard(division);
                     }}
                   >
-                    <RefreshCw size={12} /> Verify & Sync
+                    <RefreshIcon size={14} />
+                    <span>Verify &amp; Sync</span>
                   </button>
                 </div>
-                <div style={{ fontSize: 11, color: '#b8b2d0' }}>
-                  Gameplay runs 100% locally. Competitive standings are validated via hash-chained progression checkpoints, server challenge nonces, and optional Android Play Integrity ({save.social.playIntegrityAttested ? 'Attested' : 'PWA/Unattested'}).
+                <div className="card-sub text-muted">
+                  Gameplay runs 100% locally. Competitive standings are validated via hash-chained
+                  progression checkpoints, server challenge nonces, and optional Android Play
+                  Integrity ({save.social.playIntegrityAttested ? 'Attested' : 'PWA/Unattested'}).
                 </div>
               </div>
 
               <div className="buy-mode-strip">
                 {(['verified', 'provisional', 'unranked'] as const).map((div) => (
                   <button
+                    type="button"
                     key={div}
                     className={`buy-mode-btn ${division === div ? 'active' : ''}`}
-                    onClick={() => setDivision(div)}
+                    onClick={() => {
+                      if (division !== div) {
+                        controller.playUiSound('tab');
+                        setDivision(div);
+                      }
+                    }}
                   >
                     {div.toUpperCase()}
                   </button>
                 ))}
               </div>
 
-              {board?.message && (
-                <div style={{ fontSize: 11, color: '#fde047', textAlign: 'center' }}>
-                  {board.message}
-                </div>
-              )}
+              {board?.message && <div className="notice-pill-gold text-center">{board.message}</div>}
 
               {board && board.entries.length > 0 ? (
                 board.entries.map((entry, idx) => (
                   <div
-                    className="item-card"
+                    className={`item-card ${entry.isSelf ? 'card-self' : ''}`}
                     key={entry.playerId}
-                    style={{
-                      borderColor: entry.isSelf ? '#facc15' : undefined,
-                    }}
                   >
-                    <div>
-                      <strong>
+                    <div className="min-w-0">
+                      <strong className="card-title text-ink">
                         #{idx + 1} {entry.displayName} {entry.isSelf ? '(You)' : ''}
                       </strong>
-                      <div style={{ fontSize: 11, color: '#b8b2d0' }}>
-                        {entry.totalRestaurantsRenovated} Renovations · +{entry.allProfitPct.toLocaleString()}% Profit
+                      <div className="card-sub text-muted tabular-nums">
+                        {entry.totalRestaurantsRenovated} Renovations · +
+                        {entry.allProfitPct.toLocaleString()}% Profit
                       </div>
                     </div>
-                    <strong style={{ color: '#facc15' }}>City {entry.cityNumber}</strong>
+                    <strong className="text-gold tabular-nums">City {entry.cityNumber}</strong>
                   </div>
                 ))
               ) : (
-                <div className="item-card-col" style={{ textAlign: 'center', color: '#b8b2d0', fontSize: 12 }}>
-                  No verified entries in this division yet. Click &quot;Verify &amp; Sync&quot; to submit your progression checkpoint.
+                <div className="item-card-col empty-card text-muted">
+                  No verified entries in this division yet. Click &quot;Verify &amp; Sync&quot; to
+                  submit your progression checkpoint.
                 </div>
               )}
             </>

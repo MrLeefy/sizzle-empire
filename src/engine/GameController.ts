@@ -70,12 +70,15 @@ import {
 } from './social/clubService';
 import { OnlineSocialClient } from './social/leaderboardService';
 import {
+  DEFAULT_AMBIENT_ENABLED,
+  DEFAULT_AMBIENT_VOLUME,
+  DEFAULT_SFX_VOLUME,
   createNewGameSave,
   exportSaveToJson,
   importSaveFromJson,
 } from './persistence/saveSchema';
 import { SaveStorage } from './persistence/storage';
-import { SoundEngine } from '@/audio/soundEngine';
+import { SoundEngine, type SfxName, type SfxPlayOptions } from '@/audio/soundEngine';
 import { CapacitorBridge } from '@/native/capacitorBridge';
 
 export interface OfflineEarningsReport {
@@ -127,6 +130,12 @@ export class GameController {
   private toastSeq = 1;
   private uiVersion = 0;
   private loaded = false;
+  private backHandlers: Array<{ id: number; fn: () => boolean }> = [];
+  private backHandlerSeq = 1;
+  private readonly UPGRADE_COMBO_WINDOW_MS = 700;
+  private upgradeComboCount = 0;
+  private lastUpgradeAtMs: number | null = null;
+  private lastUpgradeStationIndex: number | null = null;
 
   constructor(initialSave?: GameSaveData) {
     this.save = initialSave ?? createNewGameSave();
@@ -135,6 +144,8 @@ export class GameController {
     this.activeTemplate = getRestaurantTemplate(active.templateId);
     this.activeLayout = buildRestaurantLayout(this.activeTemplate);
     this.sim.syncLayoutSlots(active, this.activeLayout);
+    this.syncAudioSettings();
+    this.native.setHapticsEnabled(this.save.settings.hapticsEnabled);
   }
 
   getUiVersion(): number {
@@ -229,7 +240,107 @@ export class GameController {
     for (const fn of this.listeners) fn();
   }
 
+  private syncAudioSettings(): void {
+    const s = this.save.settings;
+    const soundEnabled = typeof s.soundEnabled === 'boolean' ? s.soundEnabled : true;
+    const sfxVolume =
+      typeof s.sfxVolume === 'number' && Number.isFinite(s.sfxVolume)
+        ? Math.min(1, Math.max(0, s.sfxVolume))
+        : DEFAULT_SFX_VOLUME;
+    const ambientEnabled =
+      typeof s.ambientEnabled === 'boolean' ? s.ambientEnabled : DEFAULT_AMBIENT_ENABLED;
+    const ambientVolume =
+      typeof s.ambientVolume === 'number' && Number.isFinite(s.ambientVolume)
+        ? Math.min(1, Math.max(0, s.ambientVolume))
+        : DEFAULT_AMBIENT_VOLUME;
+
+    s.soundEnabled = soundEnabled;
+    s.sfxVolume = sfxVolume;
+    s.ambientEnabled = ambientEnabled;
+    s.ambientVolume = ambientVolume;
+
+    this.sound.setEnabled(soundEnabled);
+    this.sound.setSfxVolume(sfxVolume);
+    this.sound.setAmbientEnabled(ambientEnabled);
+    this.sound.setAmbientVolume(ambientVolume);
+  }
+
+  registerBackHandler(handler: () => boolean): () => void {
+    const id = this.backHandlerSeq++;
+    const entry = { id, fn: handler };
+    this.backHandlers.push(entry);
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      const idx = this.backHandlers.indexOf(entry);
+      if (idx !== -1) {
+        this.backHandlers.splice(idx, 1);
+      }
+    };
+  }
+
+  handleBackButton(): boolean {
+    // Snapshot LIFO iteration so handlers may safely unsubscribe themselves or others while running.
+    const snapshot = [...this.backHandlers];
+    for (let i = snapshot.length - 1; i >= 0; i--) {
+      const entry = snapshot[i];
+      if (!this.backHandlers.includes(entry)) continue;
+      try {
+        if (entry.fn()) {
+          return true;
+        }
+      } catch {
+        // Never let a throwing UI handler wedge Android Back navigation
+      }
+    }
+    return false;
+  }
+
+  unlockAudio(): void {
+    this.sound.unlock();
+  }
+
+  playUiSound(sfx: SfxName, opts?: SfxPlayOptions): void {
+    this.sound.unlock();
+    this.sound.play(sfx, opts);
+  }
+
+  private resetUpgradeCombo(): void {
+    this.upgradeComboCount = 0;
+    this.lastUpgradeAtMs = null;
+    this.lastUpgradeStationIndex = null;
+  }
+
+  private recordUpgradeCombo(stationIndex: number, nowMs = Date.now()): number {
+    const elapsed = this.lastUpgradeAtMs !== null ? nowMs - this.lastUpgradeAtMs : -1;
+    const isConsecutive =
+      this.lastUpgradeStationIndex === stationIndex &&
+      this.lastUpgradeAtMs !== null &&
+      elapsed >= 0 &&
+      elapsed <= this.UPGRADE_COMBO_WINDOW_MS;
+
+    this.upgradeComboCount = isConsecutive ? this.upgradeComboCount + 1 : 1;
+    this.lastUpgradeAtMs = nowMs;
+    this.lastUpgradeStationIndex = stationIndex;
+    // 0-indexed rising pentatonic step (0 on 1st tap, 1 on 2nd within 700ms, ..., 24+)
+    return Math.max(0, this.upgradeComboCount - 1);
+  }
+
+  getUpgradeComboCount(stationIndex?: number): number {
+    if (this.upgradeComboCount <= 0 || this.lastUpgradeAtMs === null) return 0;
+    const elapsed = Date.now() - this.lastUpgradeAtMs;
+    if (elapsed < 0 || elapsed > this.UPGRADE_COMBO_WINDOW_MS) {
+      return 0;
+    }
+    if (stationIndex !== undefined && this.lastUpgradeStationIndex !== stationIndex) {
+      return 0;
+    }
+    return this.upgradeComboCount;
+  }
+
   private emitSceneRebuild(): void {
+    this.resetUpgradeCombo();
     const active = this.getActiveRuntime();
     this.activeTemplate = getRestaurantTemplate(active.templateId);
     this.activeLayout = buildRestaurantLayout(this.activeTemplate);
@@ -243,7 +354,10 @@ export class GameController {
   }
 
   async boot(): Promise<void> {
-    if (this.loaded) return;
+    if (this.loaded) {
+      this.startLoop();
+      return;
+    }
     this.loaded = true;
 
     const { save: loadedSave, recoveredFromBackup } = await this.storage.load();
@@ -253,19 +367,21 @@ export class GameController {
       this.applyOfflineProgress(Date.now(), recoveredFromBackup);
     }
 
-    this.sound.setEnabled(this.save.settings.soundEnabled);
+    this.syncAudioSettings();
     this.native.setHapticsEnabled(this.save.settings.hapticsEnabled);
     this.emitSceneRebuild();
 
     await this.native.init({
       onPause: () => {
+        this.sound.setPaused(true);
         void this.persistNow();
       },
       onResume: () => {
+        this.sound.setPaused(false);
         this.applyOfflineProgress(Date.now(), false);
         this.emitUiNow();
       },
-      onBackButton: () => false,
+      onBackButton: () => this.handleBackButton(),
     });
 
     this.startLoop();
@@ -321,6 +437,9 @@ export class GameController {
   }
 
   startLoop(): void {
+    if (typeof document === 'undefined' || !document.hidden) {
+      this.sound.setPaused(false);
+    }
     if (this.rafId !== null || typeof requestAnimationFrame === 'undefined') return;
     this.lastFrameMs = performance.now();
     const tick = (nowPerf: number) => {
@@ -333,6 +452,7 @@ export class GameController {
   }
 
   stopLoop(): void {
+    this.sound.setPaused(true);
     if (this.rafId !== null && typeof cancelAnimationFrame !== 'undefined') {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
@@ -419,7 +539,7 @@ export class GameController {
         this.rng,
       );
       if (res.finished) {
-        this.sound.play(res.won ? 'renovate' : 'error');
+        this.sound.play(res.won ? 'achievement' : 'error');
         this.pushToast(
           res.won
             ? 'Adventure Cleared! Chest rewards opened!'
@@ -480,7 +600,8 @@ export class GameController {
       stn.unlocked = true;
       stn.level = 1;
       this.save.stats.stationsUpgraded += 1;
-      this.sound.play('milestone');
+      this.resetUpgradeCombo();
+      this.sound.play('unlock');
       void this.native.impact('medium');
       this.sim.pushFeedback(runtime, {
         text: `${stnTpl.icon} UNLOCKED!`,
@@ -496,6 +617,7 @@ export class GameController {
       const gainedMilestones = Math.max(0, newMilestones - prevMilestones);
 
       this.save.stats.stationsUpgraded += plan.levelsToBuy;
+      const comboStep = this.recordUpgradeCombo(stationIndex);
 
       if (gainedMilestones > 0) {
         const gemsEarned = gainedMilestones * BALANCE.MILESTONE_GEM_REWARD;
@@ -513,7 +635,7 @@ export class GameController {
           maxAge: 1.8,
         });
       } else {
-        this.sound.play('upgrade');
+        this.sound.play('upgrade', { combo: comboStep });
         void this.native.impact('light');
       }
     }
@@ -707,7 +829,7 @@ export class GameController {
     };
 
     this.lastRenovationSummary = summary;
-    this.sound.play('renovate');
+    this.sound.play(isFinalInCity ? 'city_flight' : 'renovate');
     void this.native.impact('heavy');
     this.emitSceneRebuild();
     void this.persistNow();
@@ -759,7 +881,7 @@ export class GameController {
     this.save.boost.chargesRemaining -= 1;
     const baseTime = Math.max(now, this.save.boost.activeUntilMs);
     this.save.boost.activeUntilMs = baseTime + stats.boostDurationSec * 1000;
-    this.sound.play('milestone');
+    this.sound.play('boost');
     void this.native.impact('medium');
     this.pushToast(`Profit Boost active for +${Math.round(stats.boostDurationSec / 60)}m!`, 'reward');
     this.emitUiNow();
@@ -774,7 +896,7 @@ export class GameController {
     runtime.popularDishEndsAt = runtime.simTime + BALANCE.POPULAR_DISH_DURATION_SEC;
     runtime.popularDishCooldownEndsAt = runtime.simTime + BALANCE.POPULAR_DISH_COOLDOWN_SEC;
     this.save.stats.popularDishesUsed += 1;
-    this.sound.play('upgrade');
+    this.sound.play('boost');
     this.pushToast(`Popular Dish: ${this.activeTemplate.stations[stationIndex].name}!`, 'info');
     this.emitUiNow();
     return true;
@@ -795,7 +917,7 @@ export class GameController {
       ),
     );
     this.save.stats.helpersInvited += 1;
-    this.sound.play('milestone');
+    this.sound.play('boost');
     this.pushToast('Guest Star Chef joined your kitchen for 4 minutes!', 'reward');
     this.emitUiNow();
     return true;
@@ -852,7 +974,7 @@ export class GameController {
   forgeGearBlueprint(bpId: string) {
     const crafted = forgeBlueprint(this.save, bpId);
     if (crafted) {
-      this.sound.play('renovate');
+      this.sound.play('achievement');
       this.pushToast('Blueprint forged into wearable gear!', 'reward');
       this.emitUiNow();
     }
@@ -881,7 +1003,7 @@ export class GameController {
   hatchEgg(rarity: Exclude<Rarity, 'mythic'>, foodAmount: number) {
     const res = feedEggToHatch(this.save, rarity, foodAmount, this.rng);
     if (res.hatchedPet) {
-      this.sound.play('renovate');
+      this.sound.play('achievement');
       this.pushToast('New Companion Pet hatched!', 'reward');
       this.emitSceneRebuild();
     } else if (res.foodSpent > 0) {
@@ -903,7 +1025,7 @@ export class GameController {
   mergePlayerPets(primaryId: string, fodderIds: [string, string]): boolean {
     const ok = mergePets(this.save, primaryId, fodderIds);
     if (ok) {
-      this.sound.play('renovate');
+      this.sound.play('achievement');
       this.pushToast('Companion evolved to higher rarity!', 'reward');
       this.emitSceneRebuild();
     }
@@ -913,7 +1035,7 @@ export class GameController {
   mergePlayerEggs(rarity: Exclude<Rarity, 'mythic'>): boolean {
     const ok = mergeEggs(this.save, rarity);
     if (ok) {
-      this.sound.play('milestone');
+      this.sound.play('achievement');
       this.emitUiNow();
     }
     return ok;
@@ -937,7 +1059,7 @@ export class GameController {
   unlockVault(id: string): boolean {
     const ok = unlockVaultArtifact(this.save, id);
     if (ok) {
-      this.sound.play('milestone');
+      this.sound.play('unlock');
       this.emitUiNow();
     }
     return ok;
@@ -955,7 +1077,7 @@ export class GameController {
   claimAchievement(id: string): boolean {
     const res = claimAchievementTier(this.save, id);
     if (res) {
-      this.sound.play('milestone');
+      this.sound.play('achievement');
       this.pushToast(`+${res.gems} Gems · +${res.stars}★`, 'reward');
       this.emitUiNow();
       return true;
@@ -966,7 +1088,7 @@ export class GameController {
   claimRank(rank: number): boolean {
     const res = claimChefRankReward(this.save, rank);
     if (res) {
-      this.sound.play('renovate');
+      this.sound.play('achievement');
       this.pushToast(`Chef Rank ${res.rank}: ${res.title} claimed!`, 'reward');
       this.emitUiNow();
       return true;
@@ -996,7 +1118,7 @@ export class GameController {
     const stats = this.getActiveStats();
     const ok = startTimedAdventure(this.save, adventureId, level, stats.startingCash);
     if (ok) {
-      this.sound.play('milestone');
+      this.sound.play('boost');
       this.emitSceneRebuild();
     }
     return ok;
@@ -1010,7 +1132,7 @@ export class GameController {
   brewPotion(recipeId: string): boolean {
     const ok = brewOrUpgradePotion(this.save, recipeId);
     if (ok) {
-      this.sound.play('milestone');
+      this.sound.play('boost');
       this.emitUiNow();
     }
     return ok;
@@ -1029,7 +1151,7 @@ export class GameController {
   drinkBottledPotion(recipeId: string, level: number): boolean {
     const ok = consumeBottledPotion(this.save, recipeId, level, Date.now());
     if (ok) {
-      this.sound.play('milestone');
+      this.sound.play('boost');
       this.pushToast('Bottled elixir activated!', 'reward');
       this.emitUiNow();
     }
@@ -1037,9 +1159,10 @@ export class GameController {
   }
 
   upgradeArcane(id: string): boolean {
+    const wasUnlocked = this.save.events.potionShop.arcaneVaultUnlocked.includes(id);
     const ok = upgradeArcaneVault(this.save, id);
     if (ok) {
-      this.sound.play('upgrade');
+      this.sound.play(wasUnlocked ? 'upgrade' : 'unlock');
       this.emitUiNow();
     }
     return ok;
@@ -1077,7 +1200,7 @@ export class GameController {
   foundClub(name: string, tag: string, isPublic: boolean) {
     const res = createClubLocal(this.save, name, tag, isPublic);
     if (res.ok && this.save.social.club) {
-      this.sound.play('renovate');
+      this.sound.play('achievement');
       void this.socialClient.syncClubState(this.save.social.club);
       this.emitUiNow();
     }
@@ -1087,7 +1210,7 @@ export class GameController {
   joinClub(club: NonNullable<GameSaveData['social']['club']>) {
     const res = joinClubByObject(this.save, club);
     if (res.ok && this.save.social.club) {
-      this.sound.play('milestone');
+      this.sound.play('unlock');
       void this.socialClient.syncClubState(this.save.social.club);
       this.emitUiNow();
     }
@@ -1100,9 +1223,10 @@ export class GameController {
   }
 
   donateGearToClub(instanceIds: string[]) {
+    const prevLevel = this.save.social.club?.level ?? 1;
     const res = salvageGearToClub(this.save, instanceIds);
     if (res.itemsConsumed > 0 && this.save.social.club) {
-      this.sound.play('milestone');
+      this.sound.play(res.newClubLevel > prevLevel ? 'milestone' : 'upgrade');
       void this.socialClient.syncClubState(this.save.social.club);
       this.emitUiNow();
     }
@@ -1112,7 +1236,7 @@ export class GameController {
   claimClubReward(level: number): string | null {
     const label = claimClubLevelReward(this.save, level);
     if (label) {
-      this.sound.play('renovate');
+      this.sound.play('achievement');
       this.pushToast(`Club Lv ${level}: ${label}!`, 'reward');
       this.emitUiNow();
     }
@@ -1129,8 +1253,62 @@ export class GameController {
   }
 
   updateSettings(patch: Partial<SettingsState>): void {
-    this.save.settings = { ...this.save.settings, ...patch };
-    this.sound.setEnabled(this.save.settings.soundEnabled);
+    const prev = this.save.settings;
+    const next: SettingsState = { ...prev, ...patch };
+
+    if ('soundEnabled' in patch) {
+      next.soundEnabled =
+        typeof patch.soundEnabled === 'boolean'
+          ? patch.soundEnabled
+          : typeof prev.soundEnabled === 'boolean'
+            ? prev.soundEnabled
+            : true;
+    }
+
+    if ('hapticsEnabled' in patch) {
+      next.hapticsEnabled =
+        typeof patch.hapticsEnabled === 'boolean'
+          ? patch.hapticsEnabled
+          : typeof prev.hapticsEnabled === 'boolean'
+            ? prev.hapticsEnabled
+            : true;
+    }
+
+    if ('sfxVolume' in patch) {
+      if (typeof patch.sfxVolume === 'number' && Number.isFinite(patch.sfxVolume)) {
+        next.sfxVolume = Math.min(1, Math.max(0, patch.sfxVolume));
+      } else {
+        next.sfxVolume =
+          typeof prev.sfxVolume === 'number' && Number.isFinite(prev.sfxVolume)
+            ? Math.min(1, Math.max(0, prev.sfxVolume))
+            : DEFAULT_SFX_VOLUME;
+      }
+    }
+
+    if ('ambientVolume' in patch) {
+      if (typeof patch.ambientVolume === 'number' && Number.isFinite(patch.ambientVolume)) {
+        next.ambientVolume = Math.min(1, Math.max(0, patch.ambientVolume));
+      } else {
+        next.ambientVolume =
+          typeof prev.ambientVolume === 'number' && Number.isFinite(prev.ambientVolume)
+            ? Math.min(1, Math.max(0, prev.ambientVolume))
+            : DEFAULT_AMBIENT_VOLUME;
+      }
+    }
+
+    if ('ambientEnabled' in patch) {
+      if (typeof patch.ambientEnabled === 'boolean') {
+        next.ambientEnabled = patch.ambientEnabled;
+      } else {
+        next.ambientEnabled =
+          typeof prev.ambientEnabled === 'boolean'
+            ? prev.ambientEnabled
+            : DEFAULT_AMBIENT_ENABLED;
+      }
+    }
+
+    this.save.settings = next;
+    this.syncAudioSettings();
     this.native.setHapticsEnabled(this.save.settings.hapticsEnabled);
     this.emitUiNow();
     void this.persistNow();
@@ -1151,9 +1329,15 @@ export class GameController {
 
   async importSave(json: string): Promise<boolean> {
     const parsed = importSaveFromJson(json);
-    if (!parsed) return false;
+    if (!parsed) {
+      this.sound.play('error');
+      return false;
+    }
     this.save = parsed;
     this.rng.setState(parsed.rngState);
+    this.syncAudioSettings();
+    this.native.setHapticsEnabled(this.save.settings.hapticsEnabled);
+    this.resetUpgradeCombo();
     await this.persistNow();
     this.emitSceneRebuild();
     this.pushToast('Save imported successfully!', 'reward');
@@ -1164,6 +1348,9 @@ export class GameController {
     await this.storage.clear();
     this.save = createNewGameSave();
     this.rng.setState(this.save.rngState);
+    this.syncAudioSettings();
+    this.native.setHapticsEnabled(this.save.settings.hapticsEnabled);
+    this.resetUpgradeCombo();
     await this.persistNow();
     this.emitSceneRebuild();
     this.pushToast('Started a fresh culinary empire!', 'info');

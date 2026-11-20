@@ -1,14 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  Zap,
-  Shield,
-  PawPrint,
-  Landmark,
-  Calendar,
-  Trophy,
-  Users,
-  Sparkles,
-} from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { GameController } from '@/engine/GameController';
 import { SceneRenderer } from '@/renderer/SceneRenderer';
 import { WorldOverlayPainter } from './components/WorldOverlayPainter';
@@ -24,11 +14,23 @@ import { AchievementsSheet } from './components/AchievementsSheet';
 import { SocialSheet } from './components/SocialSheet';
 import { SettingsModal } from './components/SettingsModal';
 import { BoxOpeningModal, OfflineModal, RenovationModal } from './components/GameModals';
+import {
+  AirplaneIcon,
+  BoltIcon,
+  ClubIcon,
+  PawIcon,
+  RenovateIcon,
+  ShieldIcon,
+  TentIcon,
+  TrophyIcon,
+  VaultIcon,
+} from './components/CartoonIcons';
 import { d } from '@/engine/economy/bigNumber';
 import { getRestaurantUpgradeCost } from '@/engine/economy/economy';
 import { getClaimableAchievementCount } from '@/engine/meta/achievements';
 import { getCityByNumber } from '@/data/cities';
 import type { LootRewardItem } from '@/types/game';
+import type { SfxName } from '@/audio/soundEngine';
 
 type ActiveSheet =
   | null
@@ -40,6 +42,10 @@ type ActiveSheet =
   | 'achievements'
   | 'social'
   | 'settings';
+
+function formatBadgeCount(n: number): string {
+  return n > 99 ? '99+' : String(n);
+}
 
 export const App: React.FC = () => {
   const controllerRef = useRef<GameController | null>(null);
@@ -56,17 +62,70 @@ export const App: React.FC = () => {
   const [, setTick] = useState(0);
   const [selectedStation, setSelectedStation] = useState<number | null>(null);
   const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
-  const [boxReveal, setBoxReveal] = useState<{ title: string; rewards: LootRewardItem[] } | null>(null);
+  const [boxReveal, setBoxReveal] = useState<{ title: string; rewards: LootRewardItem[] } | null>(
+    null,
+  );
+
+  // Keep live refs for imperative callbacks & LIFO Android Back handlers
+  const activeSheetRef = useRef<ActiveSheet>(activeSheet);
+  activeSheetRef.current = activeSheet;
+  const selectedStationRef = useRef<number | null>(selectedStation);
+  selectedStationRef.current = selectedStation;
+  const boxRevealRef = useRef(boxReveal);
+  boxRevealRef.current = boxReveal;
+  const lastCanvasPickAtRef = useRef(0);
 
   // Sync selected station into imperative overlay painter
   useEffect(() => {
     painterRef.current?.setSelectedStation(selectedStation);
   }, [selectedStation]);
 
+  // One-time global user gesture Web Audio unlock (StrictMode-safe cleanup)
+  useEffect(() => {
+    let unlocked = false;
+    const handleGesture = () => {
+      if (unlocked) return;
+      unlocked = true;
+      controller.unlockAudio();
+      window.removeEventListener('pointerdown', handleGesture, true);
+      window.removeEventListener('touchstart', handleGesture, true);
+      window.removeEventListener('keydown', handleGesture, true);
+    };
+    const opts: AddEventListenerOptions = { capture: true, passive: true };
+    window.addEventListener('pointerdown', handleGesture, opts);
+    window.addEventListener('touchstart', handleGesture, opts);
+    window.addEventListener('keydown', handleGesture, opts);
+    return () => {
+      window.removeEventListener('pointerdown', handleGesture, true);
+      window.removeEventListener('touchstart', handleGesture, true);
+      window.removeEventListener('keydown', handleGesture, true);
+    };
+  }, [controller]);
+
+  // Base Android hardware Back handler (LIFO layer 1: activeSheet -> selectedStation -> minimize)
+  useEffect(() => {
+    return controller.registerBackHandler(() => {
+      if (activeSheetRef.current !== null) {
+        controller.playUiSound('sheet_close');
+        setActiveSheet(null);
+        return true;
+      }
+      if (selectedStationRef.current !== null) {
+        controller.playUiSound('sheet_close');
+        setSelectedStation(null);
+        return true;
+      }
+      return false;
+    });
+  }, [controller]);
+
   // Boot simulation, IndexedDB persistence, Three.js renderer, and throttled UI subscription
   useEffect(() => {
     const unsub = controller.subscribeUi(() => {
       setTick(controller.getUiVersion());
+    });
+    const unsubScene = controller.subscribeSceneRebuild(() => {
+      setSelectedStation(null);
     });
 
     // Expose dev debug hooks safely for headless testing & inspection
@@ -79,8 +138,15 @@ export const App: React.FC = () => {
         layer: overlayRef.current,
         controller,
         onSelectStation: (idx) => {
-          setActiveSheet(null);
-          setSelectedStation((prev) => (prev === idx ? null : idx));
+          const prev = selectedStationRef.current;
+          if (prev === idx) {
+            controller.playUiSound('sheet_close');
+            setSelectedStation(null);
+          } else {
+            controller.playUiSound(prev === null ? 'sheet_open' : 'tap');
+            setActiveSheet(null);
+            setSelectedStation(idx);
+          }
         },
         onTapTip: (tipId) => {
           controller.tapTip(tipId);
@@ -92,10 +158,16 @@ export const App: React.FC = () => {
         container: viewportRef.current,
         controller,
         onSelectStation: (idx) => {
+          lastCanvasPickAtRef.current = performance.now();
+          const prev = selectedStationRef.current;
+          if (prev !== idx) {
+            controller.playUiSound(prev === null ? 'sheet_open' : 'tap');
+          }
           setActiveSheet(null);
           setSelectedStation(idx);
         },
         onTapTip: (tipId) => {
+          lastCanvasPickAtRef.current = performance.now();
           controller.tapTip(tipId);
         },
         onOverlayFrame: (frame) => {
@@ -107,6 +179,7 @@ export const App: React.FC = () => {
 
     return () => {
       unsub();
+      unsubScene();
       controller.stopLoop();
       rendererRef.current?.dispose();
       painterRef.current?.dispose();
@@ -140,14 +213,75 @@ export const App: React.FC = () => {
   const offlineReport = controller.getOfflineReport();
   const renovationSummary = controller.getRenovationSummary();
   const toasts = controller.getToasts();
+  const hasModeBanner = controller.save.events.activeView !== 'main';
+  const hasGlobalModal = Boolean(boxReveal || renovationSummary || offlineReport);
 
-  const toggleSheet = (sheet: ActiveSheet) => {
+  // Topmost LIFO Android Back handler while any global celebration/offline modal is visible
+  useEffect(() => {
+    if (!hasGlobalModal) return;
+    return controller.registerBackHandler(() => {
+      if (boxRevealRef.current) {
+        controller.playUiSound('sheet_close');
+        setBoxReveal(null);
+        return true;
+      }
+      if (controller.getRenovationSummary()) {
+        controller.playUiSound('sheet_close');
+        controller.dismissRenovationSummary();
+        return true;
+      }
+      if (controller.getOfflineReport()) {
+        controller.playUiSound('coin');
+        controller.dismissOfflineReport();
+        return true;
+      }
+      return false;
+    });
+  }, [controller, hasGlobalModal]);
+
+  const playUiSound = useCallback(
+    (sfx: SfxName) => {
+      controller.playUiSound(sfx);
+    },
+    [controller],
+  );
+
+  const closeSheet = useCallback(
+    (silent = false) => {
+      if (!silent) controller.playUiSound('sheet_close');
+      setActiveSheet(null);
+    },
+    [controller],
+  );
+
+  const closePopover = useCallback(() => {
+    controller.playUiSound('sheet_close');
     setSelectedStation(null);
-    setActiveSheet((prev) => (prev === sheet ? null : sheet));
-  };
+  }, [controller]);
+
+  const toggleSheet = useCallback(
+    (sheet: ActiveSheet) => {
+      const prev = activeSheetRef.current;
+      const next = prev === sheet ? null : sheet;
+      controller.playUiSound(next === null ? 'sheet_close' : prev === null ? 'sheet_open' : 'tab');
+      setSelectedStation(null);
+      setActiveSheet(next);
+    },
+    [controller],
+  );
+
+  const handleVisualSettingsChange = useCallback(() => {
+    rendererRef.current?.applyQualitySettings();
+  }, []);
 
   return (
-    <div className="game-shell" onClick={() => selectedStation !== null && setSelectedStation(null)}>
+    <div
+      className="game-shell"
+      onClick={() => {
+        if (performance.now() - lastCanvasPickAtRef.current < 300) return;
+        if (selectedStationRef.current !== null) closePopover();
+      }}
+    >
       {/* 3D WebGL Canvas */}
       <div className="viewport-3d" ref={viewportRef} />
 
@@ -159,7 +293,7 @@ export const App: React.FC = () => {
 
       {/* Toast Notices */}
       {toasts.length > 0 && (
-        <div className="toast-stack">
+        <div className={`toast-stack ${hasModeBanner ? 'below-banner' : ''}`}>
           {toasts.map((t) => (
             <div key={t.id} className={`toast-item ${t.kind}`}>
               {t.text}
@@ -174,18 +308,23 @@ export const App: React.FC = () => {
       {/* Station Level / Unlock Popover */}
       {selectedStation !== null && !activeSheet && (
         <StationPopover
+          key={selectedStation}
           controller={controller}
           stationIndex={selectedStation}
-          onClose={() => setSelectedStation(null)}
+          onClose={closePopover}
         />
       )}
 
       {/* Renovate / Fly to Next City CTA */}
       {canRenovate && selectedStation === null && !activeSheet && (
-        <div className="renovate-cta-wrap">
-          <button className="renovate-cta" onClick={() => controller.renovateMainRestaurant()}>
-            <Sparkles size={18} />
-            <span>{isCityFlightReady ? '✈️ FLY TO NEXT CITY!' : '🏗️ RENOVATE RESTAURANT!'}</span>
+        <div className="renovate-cta-wrap" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="renovate-cta"
+            onClick={() => controller.renovateMainRestaurant()}
+          >
+            {isCityFlightReady ? <AirplaneIcon size={20} /> : <RenovateIcon size={20} />}
+            <span>{isCityFlightReady ? 'FLY TO NEXT CITY!' : 'RENOVATE RESTAURANT!'}</span>
           </button>
         </div>
       )}
@@ -194,96 +333,109 @@ export const App: React.FC = () => {
       <nav className="bottom-nav" onClick={(e) => e.stopPropagation()}>
         <div className="bottom-nav-inner">
           <button
+            type="button"
             className={`nav-btn ${activeSheet === 'upgrades' ? 'active' : ''}`}
             onClick={() => toggleSheet('upgrades')}
           >
-            <Zap size={18} />
-            <span>Upgrades</span>
+            <BoltIcon size={22} />
+            <span className="nav-label">Upgrades</span>
             {affordableUpgradesCount > 0 && (
-              <span className="nav-badge">{affordableUpgradesCount}</span>
+              <span className="nav-badge">{formatBadgeCount(affordableUpgradesCount)}</span>
             )}
           </button>
 
           <button
+            type="button"
             className={`nav-btn ${activeSheet === 'gear' ? 'active' : ''}`}
             onClick={() => toggleSheet('gear')}
           >
-            <Shield size={18} />
-            <span>Gear</span>
-            {totalBoxes > 0 && <span className="nav-badge">{totalBoxes}</span>}
+            <ShieldIcon size={22} />
+            <span className="nav-label">Gear</span>
+            {totalBoxes > 0 && <span className="nav-badge">{formatBadgeCount(totalBoxes)}</span>}
           </button>
 
           <button
+            type="button"
             className={`nav-btn ${activeSheet === 'pets' ? 'active' : ''}`}
             onClick={() => toggleSheet('pets')}
           >
-            <PawPrint size={18} />
-            <span>Pets</span>
+            <PawIcon size={22} />
+            <span className="nav-label">Pets</span>
           </button>
 
           <button
+            type="button"
             className={`nav-btn ${activeSheet === 'vault' ? 'active' : ''}`}
             onClick={() => toggleSheet('vault')}
           >
-            <Landmark size={18} />
-            <span>Vault</span>
+            <VaultIcon size={22} />
+            <span className="nav-label">Vault</span>
           </button>
 
           <button
+            type="button"
             className={`nav-btn ${activeSheet === 'events' ? 'active' : ''}`}
             onClick={() => toggleSheet('events')}
           >
-            <Calendar size={18} />
-            <span>Events</span>
+            <TentIcon size={22} />
+            <span className="nav-label">Events</span>
           </button>
 
           <button
+            type="button"
             className={`nav-btn ${activeSheet === 'achievements' ? 'active' : ''}`}
             onClick={() => toggleSheet('achievements')}
           >
-            <Trophy size={18} />
-            <span>Ranks</span>
-            {claimableAch > 0 && <span className="nav-badge">{claimableAch}</span>}
+            <TrophyIcon size={22} />
+            <span className="nav-label">Ranks</span>
+            {claimableAch > 0 && (
+              <span className="nav-badge">{formatBadgeCount(claimableAch)}</span>
+            )}
           </button>
 
           <button
+            type="button"
             className={`nav-btn ${activeSheet === 'social' ? 'active' : ''}`}
             onClick={() => toggleSheet('social')}
           >
-            <Users size={18} />
-            <span>Club</span>
+            <ClubIcon size={22} />
+            <span className="nav-label">Club</span>
           </button>
         </div>
       </nav>
 
       {/* Bottom Sheets & Modals */}
       {activeSheet === 'upgrades' && (
-        <UpgradesSheet controller={controller} onClose={() => setActiveSheet(null)} />
+        <UpgradesSheet controller={controller} onClose={() => closeSheet()} />
       )}
       {activeSheet === 'gear' && (
         <GearSheet
           controller={controller}
-          onClose={() => setActiveSheet(null)}
+          onClose={() => closeSheet()}
           onShowBoxRewards={(title, rewards) => setBoxReveal({ title, rewards })}
         />
       )}
       {activeSheet === 'pets' && (
-        <PetsSheet controller={controller} onClose={() => setActiveSheet(null)} />
+        <PetsSheet controller={controller} onClose={() => closeSheet()} />
       )}
       {activeSheet === 'vault' && (
-        <VaultSheet controller={controller} onClose={() => setActiveSheet(null)} />
+        <VaultSheet controller={controller} onClose={() => closeSheet()} />
       )}
       {activeSheet === 'events' && (
-        <EventsSheet controller={controller} onClose={() => setActiveSheet(null)} />
+        <EventsSheet controller={controller} onClose={(silent) => closeSheet(silent)} />
       )}
       {activeSheet === 'achievements' && (
-        <AchievementsSheet controller={controller} onClose={() => setActiveSheet(null)} />
+        <AchievementsSheet controller={controller} onClose={() => closeSheet()} />
       )}
       {activeSheet === 'social' && (
-        <SocialSheet controller={controller} onClose={() => setActiveSheet(null)} />
+        <SocialSheet controller={controller} onClose={() => closeSheet()} />
       )}
       {activeSheet === 'settings' && (
-        <SettingsModal controller={controller} onClose={() => setActiveSheet(null)} />
+        <SettingsModal
+          controller={controller}
+          onClose={(silent) => closeSheet(silent)}
+          onVisualSettingsChange={handleVisualSettingsChange}
+        />
       )}
 
       {offlineReport && (
@@ -291,6 +443,7 @@ export const App: React.FC = () => {
           report={offlineReport}
           notation={controller.save.settings.notation}
           onDismiss={() => controller.dismissOfflineReport()}
+          onPlaySound={playUiSound}
         />
       )}
 
@@ -298,6 +451,7 @@ export const App: React.FC = () => {
         <RenovationModal
           summary={renovationSummary}
           onDismiss={() => controller.dismissRenovationSummary()}
+          onPlaySound={playUiSound}
         />
       )}
 
@@ -306,6 +460,7 @@ export const App: React.FC = () => {
           title={boxReveal.title}
           rewards={boxReveal.rewards}
           onClose={() => setBoxReveal(null)}
+          onPlaySound={playUiSound}
         />
       )}
     </div>

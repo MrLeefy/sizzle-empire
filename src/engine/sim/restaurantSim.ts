@@ -39,7 +39,17 @@ export interface SimCallbacks {
     ingredientId?: string;
   }) => void;
   onTipCollected?: (info: { amount: string; byPet: boolean }) => void;
-  onSound?: (sfx: 'coin' | 'perfect' | 'divine' | 'tip' | 'order' | 'sizzle') => void;
+  onSound?: (
+    sfx:
+      | 'coin'
+      | 'perfect'
+      | 'divine'
+      | 'tip'
+      | 'order'
+      | 'sizzle'
+      | 'instant_cook'
+      | 'customer_happy',
+  ) => void;
 }
 
 const CUSTOMER_SHIRT_COLORS = [
@@ -689,6 +699,7 @@ export class RestaurantSimulator {
           }
 
           if (isInstant) {
+            callbacks?.onSound?.('instant_cook');
             this.finishCooking(
               runtime,
               template,
@@ -1210,6 +1221,7 @@ export class RestaurantSimulator {
           cust.status = 'leaving';
           cust.targetPos = { ...layout.exitPos };
           cust.path = this.pathfinder.findPath(cust.pos, layout.exitPos, layout);
+          callbacks?.onSound?.('customer_happy');
         }
       }
     }

@@ -680,6 +680,9 @@ export interface SettingsState {
   buyMode: BuyMode;
   bulkStep: 50 | 100;
   cameraZoom: number;
+  sfxVolume?: number; // 0..1, default 0.85
+  ambientEnabled?: boolean; // default true
+  ambientVolume?: number; // 0..1, default 0.35
 }
 
 export interface BoostState {
