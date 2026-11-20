@@ -46,6 +46,8 @@ import {
   expDampFactor,
   hashEntitySeed,
   lerpAngle,
+  resolveSmoothFacing,
+  smoothCharacterMotion,
   stepBlinkAndExpression,
   writeSquashStretch,
   type CarAnimState,
@@ -1361,8 +1363,8 @@ export class SceneRenderer {
     const isInitialWorkerSync = this.workerRigs.size === 0;
     for (const w of runtime.workers) {
       activeWorkerIds.add(w.id);
-      const ix = w.prevPos.x + (w.pos.x - w.prevPos.x) * alpha;
-      const iz = w.prevPos.z + (w.pos.z - w.prevPos.z) * alpha;
+      let ix = w.prevPos.x + (w.pos.x - w.prevPos.x) * alpha;
+      let iz = w.prevPos.z + (w.pos.z - w.prevPos.z) * alpha;
 
       let rig = this.workerRigs.get(w.id);
       let anim = this.workerAnims.get(w.id);
@@ -1395,11 +1397,14 @@ export class SceneRenderer {
         this.workerAnims.set(w.id, anim);
       }
 
-      // Compute world speed & shortest-angle facing
+      // Smooth the sim's corner-y waypoint motion into eased arcs, then derive speed & facing
+      smoothCharacterMotion(anim, ix, iz, dt);
+      ix = anim.smoothX;
+      iz = anim.smoothZ;
       const dx = ix - anim.prevRenderX;
       const dz = iz - anim.prevRenderZ;
-      const instSpeed = dt > 0.0001 ? Math.hypot(dx, dz) / dt : 0;
-      anim.lastSpeed += (instSpeed - anim.lastSpeed) * expDampFactor(10, dt);
+      const smoothSpeed = Math.hypot(anim.smoothVX, anim.smoothVZ);
+      anim.lastSpeed += (smoothSpeed - anim.lastSpeed) * expDampFactor(8, dt);
       anim.prevRenderX = ix;
       anim.prevRenderZ = iz;
 
@@ -1410,7 +1415,11 @@ export class SceneRenderer {
           targetFacing = Math.atan2(targetCust.pos.x - ix, targetCust.pos.z - iz);
         }
       }
-      anim.facing = lerpAngle(anim.facing, targetFacing, dampFast);
+      if (w.status === 'taking_order') {
+        anim.facing = lerpAngle(anim.facing, targetFacing, expDampFactor(9, dt));
+      } else {
+        resolveSmoothFacing(anim, targetFacing, dt);
+      }
 
       rig.root.position.set(ix, 0, iz);
       rig.root.rotation.y = anim.facing;
@@ -1531,8 +1540,8 @@ export class SceneRenderer {
     const activeCustIds = new Set<string>();
     for (const c of runtime.customers) {
       activeCustIds.add(c.id);
-      const ix = c.prevPos.x + (c.pos.x - c.prevPos.x) * alpha;
-      const iz = c.prevPos.z + (c.pos.z - c.prevPos.z) * alpha;
+      let ix = c.prevPos.x + (c.pos.x - c.prevPos.x) * alpha;
+      let iz = c.prevPos.z + (c.pos.z - c.prevPos.z) * alpha;
 
       let holder = this.customerRigs.get(c.id);
       if (!holder) {
@@ -1633,10 +1642,11 @@ export class SceneRenderer {
           createCharacterAnimState(c.id, c.facing, ix, iz, true, c.deliveredCount);
         this.customerAnims.set(c.id, canim);
 
-        const dx = ix - canim.prevRenderX;
-        const dz = iz - canim.prevRenderZ;
-        const instSpeed = dt > 0.0001 ? Math.hypot(dx, dz) / dt : 0;
-        canim.lastSpeed += (instSpeed - canim.lastSpeed) * expDampFactor(10, dt);
+        smoothCharacterMotion(canim, ix, iz, dt);
+        ix = canim.smoothX;
+        iz = canim.smoothZ;
+        const custSpeed = Math.hypot(canim.smoothVX, canim.smoothVZ);
+        canim.lastSpeed += (custSpeed - canim.lastSpeed) * expDampFactor(8, dt);
         canim.prevRenderX = ix;
         canim.prevRenderZ = iz;
 
@@ -1667,7 +1677,7 @@ export class SceneRenderer {
           }
         }
 
-        canim.facing = lerpAngle(canim.facing, c.facing, dampFast);
+        resolveSmoothFacing(canim, c.facing, dt);
         rig.root.position.set(ix, 0, iz);
         rig.root.rotation.y = canim.facing;
 

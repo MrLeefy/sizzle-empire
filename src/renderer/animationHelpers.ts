@@ -15,6 +15,10 @@ export interface CharacterAnimState {
   prevRenderX: number;
   prevRenderZ: number;
   phaseSeed: number;          // Deterministic per-entity offset so crowds don't sync-march
+  smoothX: number;            // Critically-damped rendered position (rounds path corners)
+  smoothZ: number;
+  smoothVX: number;           // Smoothed world velocity (units/sec)
+  smoothVZ: number;
 }
 
 export interface CarAnimState {
@@ -86,7 +90,78 @@ export function createCharacterAnimState(
     prevRenderX: x,
     prevRenderZ: z,
     phaseSeed: seed,
+    smoothX: x,
+    smoothZ: z,
+    smoothVX: 0,
+    smoothVZ: 0,
   };
+}
+
+const MOTION_OMEGA = 11;          // Spring frequency: higher = tighter path following
+const MOTION_SNAP_DIST = 1.6;     // Teleports (spawn, seat warp) snap instead of gliding
+
+/**
+ * Critically-damped follow of the simulation position. Waypoint paths have hard corners and
+ * instant starts/stops; this eases velocity in/out and rounds every corner into a smooth arc,
+ * while converging exactly onto the sim position once it stops moving.
+ */
+export function smoothCharacterMotion(
+  state: CharacterAnimState,
+  targetX: number,
+  targetZ: number,
+  dt: number,
+): void {
+  if (!Number.isFinite(targetX) || !Number.isFinite(targetZ)) return;
+  if (
+    !Number.isFinite(state.smoothX) ||
+    !Number.isFinite(state.smoothZ) ||
+    Math.hypot(targetX - state.smoothX, targetZ - state.smoothZ) > MOTION_SNAP_DIST
+  ) {
+    state.smoothX = targetX;
+    state.smoothZ = targetZ;
+    state.smoothVX = 0;
+    state.smoothVZ = 0;
+    return;
+  }
+  if (!Number.isFinite(state.smoothVX)) state.smoothVX = 0;
+  if (!Number.isFinite(state.smoothVZ)) state.smoothVZ = 0;
+  const total = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0;
+  const steps = Math.max(1, Math.ceil(total / (1 / 120)));
+  const h = total / steps;
+  const k = MOTION_OMEGA * MOTION_OMEGA;
+  const c = 2 * MOTION_OMEGA;
+  for (let i = 0; i < steps; i++) {
+    const ax = (targetX - state.smoothX) * k - state.smoothVX * c;
+    const az = (targetZ - state.smoothZ) * k - state.smoothVZ * c;
+    state.smoothVX += ax * h;
+    state.smoothVZ += az * h;
+    state.smoothX += state.smoothVX * h;
+    state.smoothZ += state.smoothVZ * h;
+  }
+}
+
+/**
+ * Facing for a smoothly-moving character: follows the smoothed travel direction while moving
+ * (so turns arc around corners), and the sim's facing once nearly stopped.
+ */
+export function resolveSmoothFacing(
+  state: CharacterAnimState,
+  simFacing: number,
+  dt: number,
+  turnLambda = 9,
+): number {
+  const sp = Math.hypot(state.smoothVX, state.smoothVZ);
+  const target = sp > 0.35 ? Math.atan2(state.smoothVX, state.smoothVZ) : simFacing;
+  const cur = normalizeAngle(state.facing);
+  const delta = normalizeAngle(target - cur);
+  // Damped turn, but never faster than ~6.5 rad/s so even 180° about-faces read as a smooth spin
+  const safeDt = Number.isFinite(dt) ? Math.max(0, Math.min(0.25, dt)) : 0;
+  const maxStep = 6.5 * safeDt;
+  let step = delta * expDampFactor(turnLambda, safeDt);
+  if (step > maxStep) step = maxStep;
+  else if (step < -maxStep) step = -maxStep;
+  state.facing = normalizeAngle(cur + step);
+  return state.facing;
 }
 
 export function createCarAnimState(

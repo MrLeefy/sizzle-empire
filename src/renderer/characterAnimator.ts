@@ -64,6 +64,7 @@ export interface CharacterAnimInput {
 export interface CharacterPoseState {
   activity: CharacterActivity;
   blend: number;          // 0 -> 1 cross-fade progress into `activity`
+  blendDuration: number;  // seconds for the current cross-fade
   from: CharacterPose;    // snapshot of the displayed pose when the activity changed
   current: CharacterPose; // last displayed pose
   target: CharacterPose;  // scratch target buffer
@@ -104,6 +105,7 @@ export interface AnimatableCharacterRig {
 
 const TWO_PI = Math.PI * 2;
 const BLEND_DURATION = 0.22;
+const WALK_BLEND_DURATION = 0.38; // starting/stopping walking eases in more gently
 const POSE_KEYS: readonly (keyof CharacterPose)[] = [
   'bodyY',
   'bodyZ',
@@ -177,6 +179,7 @@ export function createCharacterPoseState(
   return {
     activity: initialActivity,
     blend: 1,
+    blendDuration: BLEND_DURATION,
     from: createNeutralPose(),
     current: createNeutralPose(),
     target: createNeutralPose(),
@@ -289,10 +292,12 @@ export function synthesizeTargetPose(
       const c = Math.cos(state.walkPhase);
       // 0..1, peaks twice per stride but is a pure cosine, so it never "kinks" like |cos|
       const bob = 0.5 - 0.5 * Math.cos(state.walkPhase * 2);
-      const stride = clamp(0.38 + speed * 0.04, 0.38, 0.55);
+      // Steps fade in/out with speed so accelerating & braking never pop
+      const moveAmt = smoothstep(speed / 1.4);
+      const stride = clamp(0.38 + speed * 0.04, 0.38, 0.55) * moveAmt;
       out.lLegX = s * stride;
       out.rLegX = -s * stride;
-      out.bodyY = bob * 0.022;
+      out.bodyY = bob * 0.022 * moveAmt;
       out.squash = 1;
       out.bodyPitch = clamp(0.04 + speed * 0.01, 0.04, 0.08);
       out.bodyRoll = s * 0.03;
@@ -308,8 +313,8 @@ export function synthesizeTargetPose(
         out.trayY = bob * 0.006;
         out.trayRoll = s * 0.015;
       } else {
-        out.lArmX = -s * 0.42;
-        out.rArmX = s * 0.42;
+        out.lArmX = -s * 0.42 * moveAmt;
+        out.rArmX = s * 0.42 * moveAmt;
         out.lArmZ = 0.14;
         out.rArmZ = -0.14;
       }
@@ -493,11 +498,13 @@ export function stepCharacterPose(
 
   // 1. Activity change -> snapshot displayed pose & restart cross-fade
   if (input.activity !== state.activity) {
+    state.blendDuration =
+      input.activity === 'walk' || state.activity === 'walk' ? WALK_BLEND_DURATION : BLEND_DURATION;
     copyPose(state.from, state.current);
     state.activity = input.activity;
     state.blend = 0;
   }
-  state.blend = Math.min(1, state.blend + (dt / BLEND_DURATION));
+  state.blend = Math.min(1, state.blend + dt / (state.blendDuration || BLEND_DURATION));
 
   // 2. Walk phase only advances while walking (phase-clean, never world-coupled)
   if (input.activity === 'walk') {

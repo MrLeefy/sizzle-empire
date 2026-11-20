@@ -176,3 +176,39 @@ describe('characterAnimator — pose-blended chibi animation', () => {
     mats.dispose();
   });
 });
+
+describe('smoothCharacterMotion — eased, corner-rounding render motion', () => {
+  it('rounds a 90° path corner into an arc, eases to a stop on target, and snaps on teleports', async () => {
+    const { createCharacterAnimState, smoothCharacterMotion, resolveSmoothFacing } = await import(
+      '@/renderer/animationHelpers'
+    );
+    const st = createCharacterAnimState('walker', 0, 0, 0);
+    const dt = 1 / 60;
+    // Sim walks +Z at 2.5 u/s for 1s, then turns sharply to +X for 1s, then stops.
+    let simX = 0;
+    let simZ = 0;
+    let maxFacingStep = 0;
+    let prevFacing = st.facing;
+    let cutCorner = false;
+    for (let i = 0; i < 240; i++) {
+      if (i < 60) simZ += 2.5 * dt;
+      else if (i < 120) simX += 2.5 * dt;
+      smoothCharacterMotion(st, simX, simZ, dt);
+      resolveSmoothFacing(st, i < 60 ? 0 : Math.PI / 2, dt);
+      const step = Math.abs(st.facing - prevFacing);
+      maxFacingStep = Math.max(maxFacingStep, step);
+      prevFacing = st.facing;
+      if (i > 60 && i < 90 && st.smoothX > 0.02 && st.smoothZ < 2.49) cutCorner = true;
+    }
+    expect(cutCorner).toBe(true); // arcs around the corner instead of a hard 90° turn
+    expect(maxFacingStep).toBeLessThan(0.12); // no single-frame snap turns
+    expect(st.smoothX).toBeCloseTo(2.5, 2); // settles exactly on the sim target
+    expect(st.smoothZ).toBeCloseTo(2.5, 2);
+    expect(Math.hypot(st.smoothVX, st.smoothVZ)).toBeLessThan(0.05);
+
+    smoothCharacterMotion(st, 20, 20, dt); // teleport
+    expect(st.smoothX).toBe(20);
+    smoothCharacterMotion(st, Number.NaN, 0, dt);
+    expect(st.smoothX).toBe(20);
+  });
+});
