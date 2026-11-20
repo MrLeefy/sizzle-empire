@@ -28,3 +28,10 @@ npm run cap:sync      # Build & sync packaged offline web bundle into android/
 - [System Architecture](docs/ARCHITECTURE.md)
 - [Feature Completion Checklist](docs/FEATURE_CHECKLIST.md)
 - [Third-Party Notices & License Audit](THIRD_PARTY_NOTICES.md)
+
+## Character Lab (dev)
+
+`npm run lab` opens `/tools/character-lab.html`, a close-up stage with every worker role and customer
+variant. Use the buttons to cycle the procedural animations (walk, carry, cook, take order, wave,
+chat, sit, eat, "yay!" celebration). Characters are built in `src/renderer/characterBuilder.ts` and
+animated by the pose-blending animator in `src/renderer/characterAnimator.ts`.

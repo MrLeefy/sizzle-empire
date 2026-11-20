@@ -147,6 +147,14 @@ export interface CharacterRig {
   baseRole: WorkerRole | 'customer';
   hairStyle: HairStyleId;
   currentDishKey: string;
+
+  // --- Chibi overhaul: expressive brows, outlines & animator calibration ---
+  leftBrow: THREE.Group;
+  rightBrow: THREE.Group;
+  browBaseY: number;
+  eyeBaseScaleY: number;
+  trayBaseY: number;
+  outlineMeshes: THREE.Mesh[];
 }
 
 export interface PetVisualRig {
@@ -213,6 +221,94 @@ function enableShadows(obj: THREE.Object3D, cast = true, receive = true): void {
 function pickFromSeed<T>(list: readonly T[], seed: number): T {
   const idx = Math.abs(Math.floor(seed)) % list.length;
   return list[idx];
+}
+
+// =========================================================================
+// CHIBI PROPORTIONS (Eatventure-style: big round head, soft bean body, nub limbs)
+// =========================================================================
+
+export const CHIBI_HEAD_SCALE = 1.15;
+export const CHIBI_HEAD_Y = 1.3;
+const CHIBI_ARM_X = 0.31;
+const CHIBI_GREEDY_ARM_X = 0.37;
+const CHIBI_SHOULDER_Y = 0.79;
+const CHIBI_EYE_SCALE_Y = 1.3;
+const CHIBI_BROW_Y = 0.13;
+const CHIBI_TRAY_Y = 0.78;
+const OUTLINE_COLOR = '#3b2418';
+
+/**
+ * Inverted-hull outline geometry: clones `src` and pushes every vertex outward along its normal.
+ * Works for pivot-translated limb geometry where a plain scale would drift.
+ */
+function createOutlineGeometry(src: THREE.BufferGeometry, thickness: number): THREE.BufferGeometry {
+  const g = src.clone();
+  if (!g.getAttribute('normal')) g.computeVertexNormals();
+  const pos = g.getAttribute('position') as THREE.BufferAttribute;
+  const nrm = g.getAttribute('normal') as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    pos.setXYZ(
+      i,
+      pos.getX(i) + nrm.getX(i) * thickness,
+      pos.getY(i) + nrm.getY(i) * thickness,
+      pos.getZ(i) + nrm.getZ(i) * thickness,
+    );
+  }
+  pos.needsUpdate = true;
+  g.deleteAttribute('uv');
+  g.computeBoundingSphere();
+  g.computeBoundingBox();
+  return g;
+}
+
+function getOutlineMaterial(mats: MaterialPool): THREE.Material {
+  // Pooled back-face unlit hull (std() supports a side argument, keeping pooling/disposal intact)
+  const m = mats.std(OUTLINE_COLOR, 1, 0, undefined, 0.48, THREE.BackSide);
+  m.envMapIntensity = 0;
+  return m;
+}
+
+function attachOutline(
+  mesh: THREE.Mesh,
+  key: string,
+  thickness: number,
+  mats: MaterialPool,
+  geos: GeometryPool | undefined,
+  out: THREE.Mesh[],
+): THREE.Mesh {
+  const hull = new THREE.Mesh(
+    getGeo(geos, `outline_${key}_${thickness.toFixed(3)}`, () =>
+      createOutlineGeometry(mesh.geometry, thickness),
+    ),
+    getOutlineMaterial(mats),
+  );
+  hull.name = 'outline';
+  hull.userData.__outline = true;
+  hull.raycast = () => {};
+  mesh.add(hull);
+  out.push(hull);
+  return hull;
+}
+
+/** Soft "bean" torso: wider belly, narrower shoulders, centred on the shirt mesh origin (y = 0.64). */
+function createBeanTorsoGeometry(): THREE.BufferGeometry {
+  const profile: Array<[number, number]> = [
+    [0.0, 0.3],
+    [0.14, 0.305],
+    [0.235, 0.335],
+    [0.28, 0.4],
+    [0.292, 0.48],
+    [0.28, 0.58],
+    [0.255, 0.68],
+    [0.215, 0.79],
+    [0.16, 0.89],
+    [0.085, 0.955],
+    [0.0, 0.975],
+  ];
+  const pts = profile.map(([r, y]) => new THREE.Vector2(r, y - 0.64));
+  const g = new THREE.LatheGeometry(pts, 18);
+  g.computeVertexNormals();
+  return g;
 }
 
 function buildDefaultChefToque(
@@ -539,20 +635,21 @@ export function buildCharacterRig(
   const shoeMeshes: THREE.Mesh[] = [];
 
   // Hip-pivoted chunky legs
-  const legGeo = getGeo(geos, 'char_leg_pivoted', () => {
-    const g = new THREE.CapsuleGeometry(0.10, 0.16, 4, 8);
-    g.translate(0, -0.14, 0);
+  const legGeo = getGeo(geos, 'chibi_leg_pivoted', () => {
+    const g = new THREE.CapsuleGeometry(0.095, 0.1, 4, 10);
+    g.translate(0, -0.13, 0);
     return g;
   });
   const pantsMat = isGolden
     ? mats.metallic('#ca8a04', 0.25, 0.65)
     : mats.std(role === 'customer' ? '#334155' : '#263044', 0.58, 0.04);
 
-  const shoeGeo = getGeo(
-    geos,
-    'char_shoe',
-    () => createRoundedBoxGeometry(0.16, 0.10, 0.23, 1, 0.035),
-  );
+  // Round "bean" shoes (squashed spheres) read much softer than boxes at mobile scale
+  const shoeGeo = getGeo(geos, 'chibi_shoe', () => {
+    const g = new THREE.SphereGeometry(0.105, 14, 10);
+    g.scale(1.05, 0.68, 1.4);
+    return g;
+  });
   const shoeMat = isGolden
     ? mats.metallic('#f59e0b', 0.22, 0.72)
     : mats.glossy(role === 'customer' ? '#f8fafc' : '#3d2314', 0.34, 0.06);
@@ -560,24 +657,20 @@ export function buildCharacterRig(
   const leftLeg = new THREE.Mesh(legGeo, pantsMat);
   leftLeg.position.set(-0.125, 0.34, 0);
   const leftShoe = new THREE.Mesh(shoeGeo, shoeMat);
-  leftShoe.position.set(0, -0.26, 0.04);
+  leftShoe.position.set(0, -0.262, 0.045);
   leftLeg.add(leftShoe);
   shoeMeshes.push(leftShoe);
 
   const rightLeg = new THREE.Mesh(legGeo, pantsMat);
   rightLeg.position.set(0.125, 0.34, 0);
   const rightShoe = new THREE.Mesh(shoeGeo, shoeMat);
-  rightShoe.position.set(0, -0.26, 0.04);
+  rightShoe.position.set(0, -0.262, 0.045);
   rightLeg.add(rightShoe);
   shoeMeshes.push(rightShoe);
   bodyGroup.add(leftLeg, rightLeg);
 
   // Plump rounded torso (bottom at y = 0.30 so seated bodyGroup.y = 0.06 rests right on seatTopY = 0.36!)
-  const torsoGeo = getGeo(
-    geos,
-    'char_torso',
-    () => new THREE.CapsuleGeometry(0.24, 0.18, 6, 12),
-  );
+  const torsoGeo = getGeo(geos, 'chibi_torso_bean', createBeanTorsoGeometry);
   const shirtMat = isGolden
     ? mats.metallic('#facc15', 0.18, 0.72, '#f59e0b', 0.35)
     : mats.glossy(effectiveShirtColor, 0.36, 0.06);
@@ -586,33 +679,34 @@ export function buildCharacterRig(
   if (isGreedy) {
     shirtMesh.scale.set(1.22, 1.04, 1.12);
   } else {
-    shirtMesh.scale.set(1.06, 1.0, 0.94);
+    shirtMesh.scale.set(1.0, 1.0, 0.92);
   }
   bodyGroup.add(shirtMesh);
 
   // Shoulder-pivoted arms with separate skin hand nubs
-  const armGeo = getGeo(geos, 'char_arm_pivoted', () => {
-    const g = new THREE.CapsuleGeometry(0.09, 0.16, 4, 8);
-    g.translate(0, -0.12, 0);
+  const armGeo = getGeo(geos, 'chibi_arm_pivoted', () => {
+    const g = new THREE.CapsuleGeometry(0.078, 0.12, 4, 10);
+    g.translate(0, -0.1, 0);
     return g;
   });
   const sleeveMat = isGolden
     ? mats.metallic('#facc15', 0.18, 0.72, '#f59e0b', 0.35)
     : mats.glossy(baseSleeveColor, 0.38, 0.05);
-  const handGeo = getGeo(geos, 'char_hand_nub', () => new THREE.SphereGeometry(0.08, 10, 8));
+  // Chunky mitten hands (slightly oversized, like toy figures)
+  const handGeo = getGeo(geos, 'chibi_hand_mitten', () => new THREE.SphereGeometry(0.092, 12, 10));
 
-  const armX = isGreedy ? 0.39 : 0.34;
+  const armX = isGreedy ? CHIBI_GREEDY_ARM_X : CHIBI_ARM_X;
   const leftArm = new THREE.Mesh(armGeo, sleeveMat);
-  leftArm.position.set(-armX, 0.76, 0);
+  leftArm.position.set(-armX, CHIBI_SHOULDER_Y, 0);
   const leftHand = new THREE.Mesh(handGeo, skinMat);
-  leftHand.position.set(0, -0.24, 0.02);
+  leftHand.position.set(0, -0.225, 0.02);
   leftArm.add(leftHand);
   skinMeshes.push(leftHand);
 
   const rightArm = new THREE.Mesh(armGeo, sleeveMat);
-  rightArm.position.set(armX, 0.76, 0);
+  rightArm.position.set(armX, CHIBI_SHOULDER_Y, 0);
   const rightHand = new THREE.Mesh(handGeo, skinMat);
-  rightHand.position.set(0, -0.24, 0.02);
+  rightHand.position.set(0, -0.225, 0.02);
   rightArm.add(rightHand);
   skinMeshes.push(rightHand);
   bodyGroup.add(leftArm, rightArm);
@@ -764,14 +858,15 @@ export function buildCharacterRig(
 
   // Head group (chunky chibi scale!)
   const headGroup = new THREE.Group();
-  headGroup.position.set(0, 1.15, 0);
+  headGroup.position.set(0, CHIBI_HEAD_Y, -0.03);
+  headGroup.scale.setScalar(CHIBI_HEAD_SCALE);
   bodyGroup.add(headGroup);
 
   const skull = new THREE.Mesh(
-    getGeo(geos, 'char_skull', () => new THREE.SphereGeometry(0.35, 14, 12)),
+    getGeo(geos, 'chibi_skull', () => new THREE.SphereGeometry(0.35, 22, 18)),
     skinMat,
   );
-  skull.scale.set(1.04, 0.96, 1.0);
+  skull.scale.set(1.06, 0.97, 0.99);
   headGroup.add(skull);
   skinMeshes.push(skull);
 
@@ -785,7 +880,7 @@ export function buildCharacterRig(
   }
 
   // Glossy dark eyes with twin unlit white catchlights
-  const eyeGeo = getGeo(geos, 'char_eye', () => new THREE.SphereGeometry(0.056, 10, 8));
+  const eyeGeo = getGeo(geos, 'chibi_eye', () => new THREE.SphereGeometry(0.058, 12, 10));
   const eyeMat = mats.glossy('#1e1410', 0.12, 0.08);
   const catchBigGeo = getGeo(geos, 'char_catch_big', () => new THREE.SphereGeometry(0.022, 6, 6));
   const catchSmallGeo = getGeo(geos, 'char_catch_sm', () => new THREE.SphereGeometry(0.011, 6, 6));
@@ -793,8 +888,8 @@ export function buildCharacterRig(
 
   const makeEye = (side: -1 | 1): THREE.Mesh => {
     const eye = new THREE.Mesh(eyeGeo, eyeMat);
-    eye.scale.set(0.92, 1.15, 0.65);
-    eye.position.set(side * 0.125, 0.015, 0.315);
+    eye.scale.set(0.9, CHIBI_EYE_SCALE_Y, 0.6);
+    eye.position.set(side * 0.13, 0.02, 0.318);
     const c1 = new THREE.Mesh(catchBigGeo, catchMat);
     c1.position.set(0.018, 0.022, 0.038);
     const c2 = new THREE.Mesh(catchSmallGeo, catchMat);
@@ -815,7 +910,8 @@ export function buildCharacterRig(
   );
   for (const side of [-1, 1]) {
     const lid = new THREE.Mesh(lidGeo, skinMat);
-    lid.position.set(side * 0.125, 0.032, 0.316);
+    lid.scale.set(1, 1.25, 1);
+    lid.position.set(side * 0.13, 0.04, 0.318);
     eyelids.add(lid);
     skinMeshes.push(lid);
   }
@@ -823,13 +919,30 @@ export function buildCharacterRig(
   eyelids.visible = false;
   headGroup.add(eyelids);
 
+  // Expressive eyebrows (driven by the animator: happy raise, focused/impatient frown)
+  const browGeo = getGeo(geos, 'chibi_brow', () => new THREE.CapsuleGeometry(0.017, 0.07, 3, 6));
+  const browMat = mats.std('#3b2418', 0.6, 0.02);
+  const makeBrow = (side: -1 | 1): THREE.Group => {
+    // Pivot group sits at the brow centre so the animator can raise (position.y) & tilt (rotation.z)
+    const pivot = new THREE.Group();
+    pivot.position.set(side * 0.13, CHIBI_BROW_Y, 0.312);
+    pivot.rotation.z = side * 0.12;
+    const brow = new THREE.Mesh(browGeo, browMat);
+    brow.rotation.z = Math.PI / 2;
+    pivot.add(brow);
+    headGroup.add(pivot);
+    return pivot;
+  };
+  const leftBrow = makeBrow(-1);
+  const rightBrow = makeBrow(1);
+
   // Rosy coral cheeks
   const cheekGeo = getGeo(geos, 'char_cheek', () => new THREE.SphereGeometry(0.058, 8, 6));
   const cheekMat = mats.std('#ff8fab', 0.62, 0.02);
   for (const side of [-1, 1]) {
     const cheek = new THREE.Mesh(cheekGeo, cheekMat);
     cheek.scale.set(1.3, 0.72, 0.35);
-    cheek.position.set(side * 0.205, -0.065, 0.28);
+    cheek.position.set(side * 0.215, -0.07, 0.283);
     cheek.rotation.y = side * 0.32;
     headGroup.add(cheek);
   }
@@ -863,6 +976,9 @@ export function buildCharacterRig(
 
   // Procedural hair
   const hairGroup = new THREE.Group();
+  // Tilt the hair cap back so the big chibi forehead, brows & eyes read clearly
+  hairGroup.rotation.x = -0.3;
+  hairGroup.position.set(0, 0.015, -0.01);
   hairGroup.add(buildHairStyleMeshes(hairStyle, hairColor, mats, geos));
   headGroup.add(hairGroup);
 
@@ -898,7 +1014,7 @@ export function buildCharacterRig(
 
   // Carrying tray group (mounted on bodyGroup)
   const trayGroup = new THREE.Group();
-  trayGroup.position.set(0, 0.78, 0.46);
+  trayGroup.position.set(0, CHIBI_TRAY_Y, 0.46);
   trayGroup.visible = false;
   bodyGroup.add(trayGroup);
 
@@ -932,6 +1048,23 @@ export function buildCharacterRig(
   // Keep transparent / unlit parts non-shadow-casting
   qualityHalo.castShadow = false;
   qualityHalo.receiveShadow = false;
+
+  // Toon ink outlines on the main silhouette parts (added after shadows so hulls never cast)
+  const outlineMeshes: THREE.Mesh[] = [];
+  attachOutline(skull, 'skull', 0.014, mats, geos, outlineMeshes);
+  attachOutline(shirtMesh, 'torso', 0.018, mats, geos, outlineMeshes);
+  attachOutline(leftArm, 'arm', 0.014, mats, geos, outlineMeshes);
+  attachOutline(rightArm, 'arm', 0.014, mats, geos, outlineMeshes);
+  attachOutline(leftHand, 'hand', 0.013, mats, geos, outlineMeshes);
+  attachOutline(rightHand, 'hand', 0.013, mats, geos, outlineMeshes);
+  attachOutline(leftLeg, 'leg', 0.014, mats, geos, outlineMeshes);
+  attachOutline(rightLeg, 'leg', 0.014, mats, geos, outlineMeshes);
+  attachOutline(leftShoe, 'shoe', 0.013, mats, geos, outlineMeshes);
+  attachOutline(rightShoe, 'shoe', 0.013, mats, geos, outlineMeshes);
+  for (const hull of outlineMeshes) {
+    hull.castShadow = false;
+    hull.receiveShadow = false;
+  }
 
   return {
     root,
@@ -971,6 +1104,12 @@ export function buildCharacterRig(
     baseRole: role,
     hairStyle,
     currentDishKey: '',
+    leftBrow,
+    rightBrow,
+    browBaseY: CHIBI_BROW_Y,
+    eyeBaseScaleY: CHIBI_EYE_SCALE_Y,
+    trayBaseY: CHIBI_TRAY_Y,
+    outlineMeshes,
   };
 }
 
@@ -1010,12 +1149,12 @@ export function restyleCustomerRig(
   // Greedy proportions & scalloped bib
   if (opts.isGreedy) {
     rig.shirtMesh.scale.set(1.22, 1.04, 1.12);
-    rig.leftArm.position.x = -0.39;
-    rig.rightArm.position.x = 0.39;
+    rig.leftArm.position.x = -CHIBI_GREEDY_ARM_X;
+    rig.rightArm.position.x = CHIBI_GREEDY_ARM_X;
   } else {
-    rig.shirtMesh.scale.set(1.06, 1.0, 0.94);
-    rig.leftArm.position.x = -0.34;
-    rig.rightArm.position.x = 0.34;
+    rig.shirtMesh.scale.set(1.0, 1.0, 0.92);
+    rig.leftArm.position.x = -CHIBI_ARM_X;
+    rig.rightArm.position.x = CHIBI_ARM_X;
   }
   rig.greedyBibGroup.visible = opts.isGreedy;
 

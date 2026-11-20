@@ -53,6 +53,15 @@ import {
   type PetAnimState,
 } from './animationHelpers';
 import { VfxSystem } from './vfxSystem';
+import {
+  applyPoseToRig,
+  createCharacterPoseState,
+  customerActivityFor,
+  getHatJiggle,
+  stepCharacterPose,
+  workerActivityFor,
+  type CharacterPoseState,
+} from './characterAnimator';
 import type {
   ProjectedCookingSlot,
   ProjectedOverlayFrame,
@@ -128,6 +137,8 @@ export class SceneRenderer {
   // Per-entity animation states & state-diff trackers
   private workerAnims = new Map<string, CharacterAnimState>();
   private customerAnims = new Map<string, CharacterAnimState>();
+  private workerPoses = new Map<string, CharacterPoseState>();
+  private customerPoses = new Map<string, CharacterPoseState>();
   private carAnims = new Map<string, CarAnimState>();
   private petAnims = new Map<string, PetAnimState>();
   private tipSpawnPop = new Map<string, number>();
@@ -431,8 +442,12 @@ export class SceneRenderer {
     rig.rightLeg.rotation.set(0, 0, 0);
     rig.leftArm.rotation.set(0, 0, 0);
     rig.rightArm.rotation.set(0, 0, 0);
-    rig.leftEye.scale.y = 1.15;
-    rig.rightEye.scale.y = 1.15;
+    rig.headGroup.rotation.set(0, 0, 0);
+    rig.hatAnchor.rotation.set(0, 0, 0);
+    rig.trayGroup.rotation.set(0, 0, 0);
+    rig.trayGroup.position.y = rig.trayBaseY;
+    rig.leftEye.scale.y = rig.eyeBaseScaleY;
+    rig.rightEye.scale.y = rig.eyeBaseScaleY;
     rig.eyelids.visible = false;
     rig.eyelids.scale.y = 0.01;
     if (this.pedestrianPool.length < PEDESTRIAN_POOL_CAP) {
@@ -490,6 +505,8 @@ export class SceneRenderer {
     this.petRigs.clear();
     this.workerAnims.clear();
     this.customerAnims.clear();
+    this.workerPoses.clear();
+    this.customerPoses.clear();
     this.carAnims.clear();
     this.petAnims.clear();
     this.tipSpawnPop.clear();
@@ -1408,91 +1425,45 @@ export class SceneRenderer {
 
       // Blinking & happy expression
       const expr = stepBlinkAndExpression(anim, dt);
-      rig.leftEye.scale.y = 1.15 * expr.eyeScaleY;
-      rig.rightEye.scale.y = 1.15 * expr.eyeScaleY;
+      rig.leftEye.scale.y = rig.eyeBaseScaleY * expr.eyeScaleY;
+      rig.rightEye.scale.y = rig.eyeBaseScaleY * expr.eyeScaleY;
       rig.eyelids.visible = expr.eyelidScaleY > 0.06;
       rig.eyelids.scale.y = expr.eyelidScaleY;
-      rig.neutralMouth.visible = !expr.isHappy;
-      rig.happyMouth.visible = expr.isHappy;
 
       if (anim.hopPulse > 0) {
         anim.hopPulse = Math.max(0, anim.hopPulse - dt * 2.6);
       }
-      const hopY = anim.hopPulse > 0 ? Math.sin(anim.hopPulse * Math.PI) * 0.28 : 0;
 
-      const isWalking =
-        w.status === 'walking_to_order' ||
-        w.status === 'walking_to_station' ||
-        w.status === 'walking_to_pass' ||
-        w.status === 'walking_to_customer' ||
-        w.status === 'returning_idle';
-      const isCooking = w.status === 'cooking';
-      const isTakingOrder = w.status === 'taking_order';
+      // Pose-blended procedural animation (walk / carry / cook / take order / idle)
+      const workerActivity = workerActivityFor(w.status);
+      let pose = this.workerPoses.get(w.id);
+      if (!pose) {
+        pose = createCharacterPoseState(anim.phaseSeed, workerActivity, anim.facing);
+        this.workerPoses.set(w.id, pose);
+      }
+      const workerPose = stepCharacterPose(
+        pose,
+        {
+          activity: workerActivity,
+          dt,
+          clock: this.animClock,
+          speed: anim.lastSpeed,
+          carrying: w.carryingDish,
+          impatience: 0,
+          hopPulse: anim.hopPulse,
+          isHappy: expr.isHappy,
+        },
+        anim.facing,
+      );
+      applyPoseToRig(rig, workerPose, getHatJiggle(pose));
 
-      if (isWalking) {
-        anim.walkPhase = advanceWalkPhase(anim.walkPhase, anim.lastSpeed, dt);
-        const s = Math.sin(anim.walkPhase);
-        const absS = Math.abs(s);
-        rig.leftLeg.rotation.x = s * 0.62;
-        rig.rightLeg.rotation.x = -s * 0.62;
-        rig.leftArm.rotation.x = w.carryingDish ? -0.95 + s * 0.08 : -s * 0.52;
-        rig.rightArm.rotation.x = w.carryingDish ? -0.95 - s * 0.08 : s * 0.52;
-        rig.leftArm.rotation.z = 0;
-        rig.rightArm.rotation.z = 0;
-        rig.bodyGroup.position.set(0, absS * 0.085 + hopY, 0);
-        rig.bodyGroup.rotation.set(Math.min(0.14, anim.lastSpeed * 0.025), 0, s * 0.075);
-        rig.headGroup.rotation.x *= 1 - dampFast;
-
-        const sy = 1 + (absS - 0.35) * 0.08;
-        const sxz = 1 / Math.sqrt(sy);
-        rig.bodyGroup.scale.set(sxz, sy, sxz);
-
+      if (workerActivity === 'walk') {
         // Speed dust puffs behind fast walkers!
         anim.dustCooldown = Math.max(0, anim.dustCooldown - dt);
         if (anim.lastSpeed > 2.4 && anim.dustCooldown <= 0) {
           anim.dustCooldown = 0.22;
           this.vfx.emitSpeedDust(ix, 0.12, iz, dx, dz);
         }
-      } else if (isCooking) {
-        const chop = Math.sin(this.animClock * 17 + anim.phaseSeed);
-        rig.leftLeg.rotation.x = 0;
-        rig.rightLeg.rotation.x = 0;
-        rig.leftArm.rotation.x = -0.92 + chop * 0.42;
-        rig.rightArm.rotation.x = -0.92 - chop * 0.42;
-        rig.leftArm.rotation.z = 0.14;
-        rig.rightArm.rotation.z = -0.14;
-        rig.bodyGroup.position.set(0, Math.abs(chop) * 0.065 + hopY, 0);
-        rig.bodyGroup.rotation.set(0.12 + chop * 0.04, 0, chop * 0.04);
-        rig.headGroup.rotation.x = 0.08 + chop * 0.05;
-        rig.bodyGroup.scale.set(1, 1, 1);
-      } else if (isTakingOrder) {
-        const nod = Math.sin(this.animClock * 9 + anim.phaseSeed);
-        const write = Math.sin(this.animClock * 22 + anim.phaseSeed);
-        rig.leftLeg.rotation.x = 0;
-        rig.rightLeg.rotation.x = 0;
-        rig.leftArm.rotation.x = -0.85;
-        rig.rightArm.rotation.x = -0.78 + write * 0.22;
-        rig.leftArm.rotation.z = 0;
-        rig.rightArm.rotation.z = -0.15 + Math.cos(this.animClock * 22) * 0.12;
-        rig.bodyGroup.position.set(0, hopY, 0);
-        rig.bodyGroup.rotation.set(0.06 + nod * 0.07, 0, 0);
-        rig.headGroup.rotation.x = nod * 0.14;
-        rig.bodyGroup.scale.set(1, 1, 1);
-      } else {
-        // Calm idle breathing
-        const breath = Math.sin(this.animClock * 3.2 + anim.phaseSeed);
-        rig.leftLeg.rotation.x *= 1 - dampFast;
-        rig.rightLeg.rotation.x *= 1 - dampFast;
-        rig.leftArm.rotation.x *= 1 - dampFast;
-        rig.rightArm.rotation.x *= 1 - dampFast;
-        rig.leftArm.rotation.z *= 1 - dampFast;
-        rig.rightArm.rotation.z *= 1 - dampFast;
-        rig.bodyGroup.position.set(0, breath * 0.022 + hopY, 0);
-        rig.bodyGroup.rotation.x *= 1 - dampFast;
-        rig.bodyGroup.rotation.z *= 1 - dampFast;
-        rig.headGroup.rotation.x *= 1 - dampFast;
-        const bsy = 1 + breath * 0.015;
-        rig.bodyGroup.scale.set(1 / Math.sqrt(bsy), bsy, 1 / Math.sqrt(bsy));
       }
 
       // Carrying 3D food dish on tray + Perfect/Divine trail VFX
@@ -1552,6 +1523,7 @@ export class SceneRenderer {
         disposeObjectTree(rig.root);
         this.workerRigs.delete(id);
         this.workerAnims.delete(id);
+        this.workerPoses.delete(id);
       }
     }
 
@@ -1672,7 +1644,8 @@ export class SceneRenderer {
         if (c.deliveredCount > canim.lastDeliveredCount) {
           canim.lastDeliveredCount = c.deliveredCount;
           canim.hopPulse = 1.0;
-          canim.happyTimer = 1.15;
+          const deliveredSlot = layout.slots[c.slotIndex];
+          canim.happyTimer = deliveredSlot?.kind === 'table' ? 2.6 : 1.15;
           this.vfx.emitHearts(ix, 1.95, iz, 3);
         }
         if (canim.hopPulse > 0) {
@@ -1680,12 +1653,10 @@ export class SceneRenderer {
         }
 
         const expr = stepBlinkAndExpression(canim, dt);
-        rig.leftEye.scale.y = 1.15 * expr.eyeScaleY;
-        rig.rightEye.scale.y = 1.15 * expr.eyeScaleY;
+        rig.leftEye.scale.y = rig.eyeBaseScaleY * expr.eyeScaleY;
+        rig.rightEye.scale.y = rig.eyeBaseScaleY * expr.eyeScaleY;
         rig.eyelids.visible = expr.eyelidScaleY > 0.06;
         rig.eyelids.scale.y = expr.eyelidScaleY;
-        rig.neutralMouth.visible = !expr.isHappy;
-        rig.happyMouth.visible = expr.isHappy;
 
         // Golden customer periodic sparkle
         if (c.isGolden) {
@@ -1703,52 +1674,31 @@ export class SceneRenderer {
         const moving = c.status === 'entering' || c.status === 'leaving';
         const slot = layout.slots[c.slotIndex];
         const isSeatedTable = !moving && slot?.kind === 'table';
-        const hopY = canim.hopPulse > 0 ? Math.sin(canim.hopPulse * Math.PI) * 0.32 : 0;
+        // Seated diners chomp away happily for a couple of seconds after each delivery
+        const isEating = isSeatedTable && canim.happyTimer > 0 && canim.hopPulse <= 0.15;
+        const custActivity = customerActivityFor(c.status, isSeatedTable, isEating);
+        const impatience = Math.min(1, Math.max(0, (c.patienceTimer - 6) / 18));
 
-        if (moving) {
-          canim.walkPhase = advanceWalkPhase(canim.walkPhase, canim.lastSpeed, dt, 8, 20);
-          const s = Math.sin(canim.walkPhase);
-          rig.leftLeg.rotation.x = s * 0.56;
-          rig.rightLeg.rotation.x = -s * 0.56;
-          rig.leftArm.rotation.x = -s * 0.48;
-          rig.rightArm.rotation.x = s * 0.48;
-          rig.bodyGroup.position.set(0, Math.abs(s) * 0.07 + hopY, 0);
-          rig.bodyGroup.rotation.set(0, 0, s * 0.06);
-          rig.bodyGroup.scale.set(1, 1, 1);
-        } else if (isSeatedTable) {
-          // Harmonized Non-Clipping Seated Dining Pose!
-          // bodyGroup.y = 0.06 + hopY -> hip at 0.40, torso bottom cleanly on seatTopY = 0.36
-          // bodyGroup.z = 0.02 -> world z = tz + 0.53 (clear of backrest at +0.80 & tabletop at +0.27!)
-          // legs rotated -1.25 -> tucked cleanly forward under tabletop, clear of pedestal & chair legs!
-          rig.leftLeg.rotation.x = -1.25;
-          rig.rightLeg.rotation.x = -1.25;
-          if (c.status === 'waiting_to_order') {
-            rig.rightArm.rotation.x = -1.15 + Math.sin(this.animClock * 8 + canim.phaseSeed) * 0.24;
-            rig.leftArm.rotation.x = -0.5;
-          } else {
-            rig.leftArm.rotation.x = -0.55;
-            rig.rightArm.rotation.x = -0.55;
-          }
-          rig.bodyGroup.position.set(0, 0.06 + hopY, 0.02);
-          rig.bodyGroup.rotation.set(0.04, 0, 0);
-          writeSquashStretch(this.scratchScale, canim.hopPulse, 0.20);
-          rig.bodyGroup.scale.copy(this.scratchScale);
-        } else {
-          // Standing counter customer
-          rig.leftLeg.rotation.x *= 1 - dampFast;
-          rig.rightLeg.rotation.x *= 1 - dampFast;
-          if (c.status === 'waiting_to_order') {
-            rig.rightArm.rotation.x = -1.1 + Math.sin(this.animClock * 8 + canim.phaseSeed) * 0.24;
-            rig.leftArm.rotation.x *= 1 - dampFast;
-          } else {
-            rig.leftArm.rotation.x *= 1 - dampFast;
-            rig.rightArm.rotation.x *= 1 - dampFast;
-          }
-          rig.bodyGroup.position.set(0, hopY + Math.sin(this.animClock * 4 + canim.phaseSeed) * 0.02, 0);
-          rig.bodyGroup.rotation.set(0, 0, 0);
-          writeSquashStretch(this.scratchScale, canim.hopPulse, 0.20);
-          rig.bodyGroup.scale.copy(this.scratchScale);
+        let cpose = this.customerPoses.get(c.id);
+        if (!cpose) {
+          cpose = createCharacterPoseState(canim.phaseSeed, custActivity, canim.facing);
+          this.customerPoses.set(c.id, cpose);
         }
+        const custPose = stepCharacterPose(
+          cpose,
+          {
+            activity: custActivity,
+            dt,
+            clock: this.animClock,
+            speed: canim.lastSpeed,
+            carrying: false,
+            impatience,
+            hopPulse: canim.hopPulse,
+            isHappy: expr.isHappy,
+          },
+          canim.facing,
+        );
+        applyPoseToRig(rig, custPose, getHatJiggle(cpose));
       }
     }
 
@@ -1758,6 +1708,7 @@ export class SceneRenderer {
         if (holder.car) this.releaseCarRig(holder.car);
         this.customerRigs.delete(id);
         this.customerAnims.delete(id);
+        this.customerPoses.delete(id);
         this.carAnims.delete(id);
       }
     }
