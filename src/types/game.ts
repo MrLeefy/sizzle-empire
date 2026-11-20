@@ -267,6 +267,12 @@ export interface RestaurantLayout {
   depth: number;
   entrancePos: Vec2;
   exitPos: Vec2;
+  /**
+   * Pedestrian sidewalk lane (z) customers stroll along from/to off-screen, and the |x| where they
+   * spawn/despawn out of view. `null` for drive-thru venues (cars use their own road lane).
+   */
+  sidewalkLaneZ: number | null;
+  offscreenX: number;
   passCounterPos: Vec2 | null;
   usesWaiterPass: boolean;
   isDriveThru: boolean;

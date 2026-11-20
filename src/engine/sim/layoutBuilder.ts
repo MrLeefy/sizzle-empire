@@ -219,11 +219,18 @@ export function buildRestaurantLayout(template: RestaurantTemplate): RestaurantL
     ? { x: width / 2 + 2.5, z: depth / 2 - 2.5 }
     : { x: 1.8, z: depth / 2 + 1.2 };
 
+  // Lane threads between the corner streetlamps (z = d/2 + 1.05) and the bench / A-frame
+  // (z >= d/2 + 1.76), and spawns well beyond the portrait frame even at max zoom-out.
+  const sidewalkLaneZ = isDriveThru ? null : depth / 2 + 1.5;
+  const offscreenX = width / 2 + 4.5;
+
   return {
     width,
     depth,
     entrancePos,
     exitPos,
+    sidewalkLaneZ,
+    offscreenX,
     passCounterPos,
     usesWaiterPass,
     isDriveThru,

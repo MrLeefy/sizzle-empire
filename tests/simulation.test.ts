@@ -77,7 +77,8 @@ describe('Phase 2: Restaurant Simulation, Worker AI, Pathfinding & Pets', () => 
     save.mainRestaurant = runtime;
     const controller = new GameController(save);
 
-    for (let i = 0; i < 60 * 20; i++) {
+    // 70s: the first customers now stroll in along the sidewalk from off-screen (~2s walk-in)
+    for (let i = 0; i < 70 * 20; i++) {
       controller.stepSimulationFixed(0.05);
     }
 
@@ -157,5 +158,49 @@ describe('Phase 2: Restaurant Simulation, Worker AI, Pathfinding & Pets', () => 
     expect(p1.length).toBeGreaterThan(0);
     expect(p1[p1.length - 1]).toEqual({ x: 5, z: 6 });
     expect(p2.length).toBe(p1.length);
+  });
+});
+
+describe('Pedestrian customers stroll in from and out to off-screen', () => {
+  it('spawns walkers beyond the frame on the sidewalk lane and walks leavers back off-screen', () => {
+    const save = createNewGameSave(515);
+    const tpl = getRestaurantTemplate('citrus_press');
+    const { runtime } = createInitialRestaurantRuntime({
+      template: tpl,
+      cityNumber: 1,
+      restaurantStageIndex: 3,
+      startingCash: 1e6,
+    });
+    save.mainRestaurant = runtime;
+    const controller = new GameController(save);
+    const layout = buildRestaurantLayout(tpl);
+    expect(layout.sidewalkLaneZ).not.toBeNull();
+
+    const seen = new Set<string>();
+    let sawSpawnOffscreen = false;
+    let sawLeaveOffscreen = false;
+    for (let i = 0; i < 20 * 240; i++) {
+      controller.stepSimulationFixed(0.05);
+      for (const c of controller.save.mainRestaurant.customers) {
+        if (!seen.has(c.id)) {
+          seen.add(c.id);
+          if (c.status === 'entering' && !c.isCar) {
+            expect(Math.abs(c.pos.x)).toBeGreaterThanOrEqual(layout.width / 2 + 4);
+            expect(c.pos.z).toBeCloseTo(layout.sidewalkLaneZ!, 5);
+            sawSpawnOffscreen = true;
+          }
+        }
+        if (c.status === 'leaving' && !c.isCar && Math.abs(c.pos.x) >= layout.width / 2 + 3) {
+          expect(c.pos.z).toBeCloseTo(layout.sidewalkLaneZ!, 5);
+          sawLeaveOffscreen = true;
+        }
+      }
+    }
+    expect(sawSpawnOffscreen).toBe(true);
+    expect(sawLeaveOffscreen).toBe(true);
+    expect(controller.save.mainRestaurant.dishesServedHere).toBeGreaterThan(20);
+
+    // Drive-thru venues keep their own road lane (no sidewalk walkers)
+    expect(buildRestaurantLayout(getRestaurantTemplate('sunset_drive_in')).sidewalkLaneZ).toBeNull();
   });
 });

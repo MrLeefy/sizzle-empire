@@ -476,7 +476,7 @@ function buildPlumpPlanterTree(
     getGeo(geos, 'env_soil', () => new THREE.CylinderGeometry(0.40, 0.40, 0.04, 12)),
     mats.matte('#5c3a21'),
   );
-  soil.position.y = 0.52;
+  soil.position.y = 0.535; // slightly proud of the pot rim (coplanar tops z-fought)
 
   const trunk = new THREE.Mesh(
     getGeo(geos, 'env_trunk', () => new THREE.CylinderGeometry(0.11, 0.15, 0.68, 10)),
@@ -1659,7 +1659,9 @@ export function buildEnvironmentRig(
       getGeo(geos, `env_curb_${w}_${d}`, () => createRoundedBoxGeometry(w + 0.72, 0.22, d + 0.72, 2, 0.14)),
       mats.glossy(curbColor, 0.52, 0.06),
     );
-    curb.position.set(0, -0.07, 0);
+    // Top sits 1.5cm BELOW the floor & sidewalk tops (y = 0.04): coplanar tops z-fought and
+    // flickered across the whole floor while panning the camera.
+    curb.position.set(0, -0.085, 0);
     curb.receiveShadow = true;
     root.add(curb);
 

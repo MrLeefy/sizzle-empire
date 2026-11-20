@@ -64,6 +64,16 @@ const CUSTOMER_SHIRT_COLORS = [
 ];
 const CUSTOMER_HAIR_COLORS = ['#1e293b', '#78350f', '#d97706', '#475569', '#9a3412'];
 
+/** Customers move this much faster on the outdoor sidewalk leg of their walk. */
+const SIDEWALK_SPEED_MULT = 2.0;
+
+/** Deterministic -1 / +1 sidewalk side from an entity id (never consumes the seeded RNG). */
+export function sidewalkSideForId(id: string): -1 | 1 {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return (h & 1) === 0 ? -1 : 1;
+}
+
 let entitySeq = 1;
 function nextEntityId(prefix: string): string {
   entitySeq = (entitySeq + 1) % 100_000_000;
@@ -452,18 +462,35 @@ export class RestaurantSimulator {
     const slot = rng.pick(freeSlots);
     const isGolden = rng.chance(stats.goldenCustomerChance);
     const isGreedy = rng.chance(stats.greedyCustomerChance);
+    const custId = nextEntityId('cust');
+    const isCar = slot.kind === 'drive_thru';
+
+    // Pedestrians stroll in along the sidewalk from off-screen (left or right, deterministic by id
+    // so the RNG stream — and therefore economy pacing — is untouched), then follow the door path.
+    const indoorPath = this.pathfinder.findPath(layout.entrancePos, slot.customerPos, layout);
+    let spawnPos: Vec2 = { ...layout.entrancePos };
+    let entryPath = indoorPath;
+    if (!isCar && layout.sidewalkLaneZ !== null) {
+      const side = sidewalkSideForId(custId);
+      spawnPos = { x: side * layout.offscreenX, z: layout.sidewalkLaneZ };
+      entryPath = [
+        { x: layout.entrancePos.x, z: layout.sidewalkLaneZ },
+        { ...layout.entrancePos },
+        ...indoorPath,
+      ];
+    }
 
     const customer: CustomerEntity = {
-      id: nextEntityId('cust'),
+      id: custId,
       slotIndex: slot.index,
-      isCar: slot.kind === 'drive_thru',
+      isCar,
       isGolden,
       isGreedy,
       status: 'entering',
-      pos: { ...layout.entrancePos },
-      prevPos: { ...layout.entrancePos },
+      pos: { ...spawnPos },
+      prevPos: { ...spawnPos },
       targetPos: { ...slot.customerPos },
-      path: this.pathfinder.findPath(layout.entrancePos, slot.customerPos, layout),
+      path: entryPath,
       facing: 0,
       orderTakeProgress: 0,
       orderTakeDuration: BALANCE.BASE_ORDER_TAKE_TIME / Math.max(0.5, stats.registerSpeedMult),
@@ -497,7 +524,17 @@ export class RestaurantSimulator {
 
     for (let i = runtime.customers.length - 1; i >= 0; i--) {
       const cust = runtime.customers[i];
-      const speed = cust.isCar ? walkSpeed * 1.9 : walkSpeed;
+      // Brisker stroll while outdoors on the sidewalk keeps the extra off-screen walk from
+      // stretching service pacing.
+      const onSidewalk =
+        !cust.isCar &&
+        layout.sidewalkLaneZ !== null &&
+        cust.pos.z > layout.sidewalkLaneZ - 0.6;
+      const speed = cust.isCar
+        ? walkSpeed * 1.9
+        : onSidewalk
+          ? walkSpeed * SIDEWALK_SPEED_MULT
+          : walkSpeed;
 
       if (cust.status === 'entering') {
         const arrived = this.advanceAlongPath(cust, speed, dt);
@@ -1221,6 +1258,13 @@ export class RestaurantSimulator {
           cust.status = 'leaving';
           cust.targetPos = { ...layout.exitPos };
           cust.path = this.pathfinder.findPath(cust.pos, layout.exitPos, layout);
+          if (!cust.isCar && layout.sidewalkLaneZ !== null) {
+            // Walk out the door and stroll off-screen instead of vanishing on the doormat
+            const side = -sidewalkSideForId(cust.id);
+            const offscreen = { x: side * layout.offscreenX, z: layout.sidewalkLaneZ };
+            cust.path.push({ x: layout.exitPos.x, z: layout.sidewalkLaneZ }, offscreen);
+            cust.targetPos = { ...offscreen };
+          }
           callbacks?.onSound?.('customer_happy');
         }
       }
