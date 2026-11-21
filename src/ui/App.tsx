@@ -305,6 +305,48 @@ export const App: React.FC = () => {
       {/* Side Active Skills Rail */}
       <ActiveSkillsBar controller={controller} />
 
+      {/* 360° camera controls (also: twist two fingers to rotate, pinch to zoom, drag to move) */}
+      {selectedStation === null && !activeSheet && (
+        <div className="camera-controls" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            className="cam-btn"
+            aria-label="Rotate view left"
+            title="Rotate left (Q)"
+            onClick={() => rendererRef.current?.rotateCameraBy(Math.PI / 4)}
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path d="M5 9a8 8 0 1 1-1 6" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              <path d="M2 4v6h6" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="cam-btn"
+            aria-label="Reset camera view"
+            title="Reset view (R)"
+            onClick={() => rendererRef.current?.resetCameraView()}
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="3" />
+              <circle cx="12" cy="12" r="2.5" fill="currentColor" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="cam-btn"
+            aria-label="Rotate view right"
+            title="Rotate right (E)"
+            onClick={() => rendererRef.current?.rotateCameraBy(-Math.PI / 4)}
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path d="M19 9a8 8 0 1 0 1 6" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              <path d="M22 4v6h-6" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Station Level / Unlock Popover */}
       {selectedStation !== null && !activeSheet && (
         <StationPopover

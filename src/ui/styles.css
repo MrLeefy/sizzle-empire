@@ -1661,6 +1661,35 @@ textarea {
   font-weight: 900;
 }
 
+/* ---------- 360° CAMERA CONTROLS ---------- */
+.camera-controls {
+  position: absolute;
+  left: calc(var(--safe-left, 0px) + 8px);
+  bottom: calc(var(--safe-bottom) + 84px);
+  z-index: 18;
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.cam-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #FFFBF0 0%, #FFE7B8 100%);
+  border: 2.5px solid #3D2314;
+  color: #3D2314;
+  box-shadow: 0 3px 0 #D9B88C, 0 5px 10px rgba(61, 35, 20, 0.22);
+  transition: transform 70ms ease, box-shadow 70ms ease;
+}
+
+.cam-btn:active {
+  transform: translateY(2px) scale(0.94);
+  box-shadow: 0 1px 0 #D9B88C;
+}
+
 /* ---------- RENOVATE CTA & BOTTOM NAV ---------- */
 .renovate-cta-wrap {
   position: absolute;

@@ -78,11 +78,16 @@ export type {
 
 const CAMERA_FOV_DEG = 36;
 const TAN_HALF_FOV_Y = Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV_DEG / 2));
-const MIN_CAMERA_ZOOM = 0.7;
-const MAX_CAMERA_ZOOM = 1.65;
+const MIN_CAMERA_ZOOM = 0.55;
+const MAX_CAMERA_ZOOM = 2.8;
 const CAM_Y_RATIO = 0.88;
 const CAM_Z_RATIO = 0.96;
 const CAM_DIST_NORM = Math.hypot(CAM_Y_RATIO, CAM_Z_RATIO);
+// Free-orbit camera: default elevation reproduces the original portrait diorama framing exactly
+const DEFAULT_CAM_PITCH = Math.atan2(CAM_Y_RATIO, CAM_Z_RATIO);
+const MIN_CAM_PITCH = THREE.MathUtils.degToRad(18);
+const MAX_CAM_PITCH = THREE.MathUtils.degToRad(80);
+const CUTAWAY_YAW_THRESHOLD = 0.35; // rad off the front view before tall scenery auto-hides
 
 const PEDESTRIAN_POOL_CAP = 24;
 const CAR_POOL_CAP = 10;
@@ -186,6 +191,23 @@ export class SceneRenderer {
   private cameraDirty = true;
   private cameraPunchAmp = 0;
   private cameraPunchPhase = 0;
+  // Free 360° orbit state (yaw unwrapped so smoothing never spins the long way round)
+  private cameraPanX = 0;
+  private targetPanX = 0;
+  private minPanX = -5;
+  private maxPanX = 5;
+  private cameraYaw = 0;
+  private targetYaw = 0;
+  private cameraPitch = DEFAULT_CAM_PITCH;
+  private targetPitch = DEFAULT_CAM_PITCH;
+  private pinchStartAngle = 0;
+  private pinchStartYaw = 0;
+  private pinchStartMidY = 0;
+  private pinchStartPitch = DEFAULT_CAM_PITCH;
+  private lastDragX = 0;
+  private orbitDrag = false;
+  private cutawayCandidates: Array<{ obj: THREE.Object3D; x: number; z: number; top: number }> = [];
+  private cutawayActive = false;
 
   // Multi-pointer pan & pinch-to-zoom state machine
   private activePointers = new Map<number, { x: number; y: number }>();
@@ -604,10 +626,15 @@ export class SceneRenderer {
     }
 
     // 7. Reset portrait pan bounds & camera framing
-    this.minPanZ = -Math.max(2.0, layout.depth * 0.25);
-    this.maxPanZ = Math.max(2.0, layout.depth * 0.28);
+    this.minPanZ = -(layout.depth / 2 + 1.5);
+    this.maxPanZ = layout.depth / 2 + 4.5;
+    this.minPanX = -(layout.width / 2 + 2);
+    this.maxPanX = layout.width / 2 + 2;
     this.cameraPanZ = 0;
     this.targetPanZ = 0;
+    this.cameraPanX = 0;
+    this.targetPanX = 0;
+    this.collectCutawayCandidates();
     this.cameraPunchAmp = 0;
     this.cameraDirty = true;
     this.updateCameraTransform();
@@ -650,17 +677,110 @@ export class SceneRenderer {
         ? Math.sin(this.cameraPunchPhase) * this.cameraPunchAmp
         : 0;
 
-    this.camera.position.set(
-      0,
-      baseDist * CAM_Y_RATIO - punchWave * 0.55,
-      baseDist * CAM_Z_RATIO + this.cameraPanZ - punchWave * 0.85,
-    );
-    this.camera.lookAt(0, 0.42, this.cameraPanZ - 0.12);
+    // Orbit around the pan pivot: yaw spins 360°, pitch tilts, distance from zoom/fit
+    const dist = baseDist * CAM_DIST_NORM;
+    const sinY = Math.sin(this.cameraYaw);
+    const cosY = Math.cos(this.cameraYaw);
+    const horiz = Math.cos(this.cameraPitch) * dist - punchWave * 0.85;
+    const vert = Math.sin(this.cameraPitch) * dist - punchWave * 0.55;
+    const px = this.cameraPanX;
+    const pz = this.cameraPanZ;
+    this.camera.position.set(px + sinY * horiz, vert, pz + cosY * horiz);
+    // Look target sits 0.12 "into" the scene along the view direction (original framing at yaw 0)
+    this.camera.lookAt(px - sinY * 0.12, 0.42, pz - cosY * 0.12);
+    this.updateCutaway();
 
     // Scale fog dynamically with camera distance so Grand Hall on 390px portrait NEVER fogs out!
     if (this.scene.fog instanceof THREE.Fog) {
       this.scene.fog.near = Math.max(30, idealEuclideanDist * 1.25);
       this.scene.fog.far = Math.max(72, idealEuclideanDist * 2.45);
+    }
+  }
+
+  /** Rotate the view around the restaurant (radians, +ve = counter-clockwise from above). */
+  rotateCameraBy(deltaYaw: number): void {
+    if (!Number.isFinite(deltaYaw)) return;
+    this.targetYaw += deltaYaw;
+    this.cameraDirty = true;
+  }
+
+  /** Smoothly return to the default front-on portrait view. */
+  resetCameraView(): void {
+    // Unwind to the nearest full turn so it spins back the short way
+    const turns = Math.round(this.targetYaw / (Math.PI * 2));
+    this.cameraYaw -= turns * Math.PI * 2;
+    this.targetYaw = 0;
+    this.targetPitch = DEFAULT_CAM_PITCH;
+    this.targetPanX = 0;
+    this.targetPanZ = 0;
+    this.targetZoom = 1.0;
+    this.cameraDirty = true;
+    this.commitZoomSettingOnce();
+  }
+
+  private clampPan(): void {
+    this.targetPanX = Math.max(this.minPanX, Math.min(this.maxPanX, this.targetPanX));
+    this.targetPanZ = Math.max(this.minPanZ, Math.min(this.maxPanZ, this.targetPanZ));
+  }
+
+  /** Screen-space drag -> ground-plane pan, relative to the current camera yaw. */
+  private panByScreenDelta(dx: number, dy: number): void {
+    const panScale = 0.024 / Math.max(0.5, this.currentZoom);
+    const sinY = Math.sin(this.cameraYaw);
+    const cosY = Math.cos(this.cameraYaw);
+    // Camera right = (cos, -sin); toward-camera = (sin, cos) on the XZ plane
+    this.targetPanX -= (dx * cosY + dy * sinY) * panScale;
+    this.targetPanZ -= (-dx * sinY + dy * cosY) * panScale;
+    this.clampPan();
+    this.cameraDirty = true;
+  }
+
+  private orbitByScreenDelta(dx: number, dy: number): void {
+    this.targetYaw -= dx * 0.008;
+    this.targetPitch = Math.max(MIN_CAM_PITCH, Math.min(MAX_CAM_PITCH, this.targetPitch + dy * 0.005));
+    this.cameraDirty = true;
+  }
+
+  /** Static tall env scenery (walls, awnings, lamps, trees) that may block an orbiting view. */
+  private collectCutawayCandidates(): void {
+    this.cutawayCandidates = [];
+    this.cutawayActive = false;
+    if (!this.envRig) return;
+    this.envRig.root.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    const center = new THREE.Vector3();
+    this.envRig.root.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      box.setFromObject(obj);
+      if (box.isEmpty() || box.max.y < 1.3) return;
+      box.getCenter(center);
+      this.cutawayCandidates.push({ obj, x: center.x, z: center.z, top: box.max.y });
+    });
+  }
+
+  /** Dollhouse cutaway: hide tall scenery standing between an orbiting camera and the room. */
+  private updateCutaway(): void {
+    if (this.cutawayCandidates.length === 0) return;
+    const yawOff = Math.abs(Math.atan2(Math.sin(this.cameraYaw), Math.cos(this.cameraYaw)));
+    const active = yawOff > CUTAWAY_YAW_THRESHOLD;
+    if (!active && !this.cutawayActive) return;
+    this.cutawayActive = active;
+    const layout = this.controller.getActiveLayout();
+    const reach = Math.max(1.2, Math.min(layout.width, layout.depth) * 0.22);
+    const vx = Math.sin(this.cameraYaw);
+    const vz = Math.cos(this.cameraYaw);
+    for (const c of this.cutawayCandidates) {
+      const along = c.x * vx + c.z * vz; // distance toward the camera side from the room centre
+      const hide = active && along > reach;
+      if (hide) {
+        if (c.obj.visible) {
+          c.obj.visible = false;
+          c.obj.userData.__cutawayHidden = true;
+        }
+      } else if (c.obj.userData.__cutawayHidden) {
+        c.obj.visible = true;
+        c.obj.userData.__cutawayHidden = false;
+      }
     }
   }
 
@@ -688,7 +808,7 @@ export class SceneRenderer {
     };
 
     const onPointerDown = (ev: PointerEvent) => {
-      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      if (ev.pointerType === 'mouse' && ev.button !== 0 && ev.button !== 2) return;
       try {
         dom.setPointerCapture?.(ev.pointerId);
       } catch {
@@ -702,15 +822,17 @@ export class SceneRenderer {
         this.dragStartX = ev.clientX;
         this.dragStartY = ev.clientY;
         this.lastDragY = ev.clientY;
+        this.lastDragX = ev.clientX;
         this.gestureMoved = false;
         this.suppressTapUntilAllUp = false;
+        // Mouse: right-drag or Shift+drag orbits; plain drag pans
+        this.orbitDrag = ev.pointerType === 'mouse' && (ev.button === 2 || ev.shiftKey);
       } else if (this.activePointers.size === 2) {
         const pair = getFirstTwoPointers();
         if (pair) {
           this.gestureMode = 'pinch';
           this.suppressTapUntilAllUp = true;
-          this.pinchStartDist = Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y);
-          this.pinchStartZoom = this.targetZoom;
+          this.beginTwoFingerGesture(pair);
         }
       }
     };
@@ -722,12 +844,22 @@ export class SceneRenderer {
       if (this.gestureMode === 'pinch' && this.activePointers.size >= 2) {
         const pair = getFirstTwoPointers();
         if (pair) {
+          // Pinch = zoom, twist = rotate 360°, two-finger vertical drag = tilt
           const curDist = Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y);
           const denom = Math.max(12, this.pinchStartDist);
           const ratio = Math.max(0.01, 1 + (curDist - this.pinchStartDist) / denom);
           this.targetZoom = Math.max(
             MIN_CAMERA_ZOOM,
             Math.min(MAX_CAMERA_ZOOM, this.pinchStartZoom * ratio),
+          );
+          const curAngle = Math.atan2(pair[1].y - pair[0].y, pair[1].x - pair[0].x);
+          let dAng = curAngle - this.pinchStartAngle;
+          dAng = Math.atan2(Math.sin(dAng), Math.cos(dAng));
+          this.targetYaw = this.pinchStartYaw + dAng;
+          const midY = (pair[0].y + pair[1].y) / 2;
+          this.targetPitch = Math.max(
+            MIN_CAM_PITCH,
+            Math.min(MAX_CAM_PITCH, this.pinchStartPitch + (midY - this.pinchStartMidY) * 0.006),
           );
           this.cameraDirty = true;
         }
@@ -739,14 +871,15 @@ export class SceneRenderer {
           this.gestureMoved = true;
         }
         if (this.gestureMoved) {
+          const dx = ev.clientX - this.lastDragX;
           const dy = ev.clientY - this.lastDragY;
+          this.lastDragX = ev.clientX;
           this.lastDragY = ev.clientY;
-          const panScale = 0.024 / Math.max(0.5, this.currentZoom);
-          this.targetPanZ = Math.max(
-            this.minPanZ,
-            Math.min(this.maxPanZ, this.targetPanZ - dy * panScale),
-          );
-          this.cameraDirty = true;
+          if (this.orbitDrag) {
+            this.orbitByScreenDelta(dx, dy);
+          } else {
+            this.panByScreenDelta(dx, dy);
+          }
         }
       }
     };
@@ -770,6 +903,8 @@ export class SceneRenderer {
             if (nextEntry) {
               this.primaryPointerId = nextEntry[0];
               this.lastDragY = nextEntry[1].y;
+              this.lastDragX = nextEntry[1].x;
+              this.orbitDrag = false;
               this.gestureMode = 'pan';
               this.gestureMoved = true;
             }
@@ -781,16 +916,14 @@ export class SceneRenderer {
         } else {
           // Re-anchor pinch baseline to remaining finger pair (e.g., 3rd-finger handoff)
           const pair = getFirstTwoPointers();
-          if (pair) {
-            this.pinchStartDist = Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y);
-            this.pinchStartZoom = this.targetZoom;
-          }
+          if (pair) this.beginTwoFingerGesture(pair);
         }
       } else if (this.gestureMode === 'pan') {
         if (
           ev.type === 'pointerup' &&
           !this.gestureMoved &&
           !this.suppressTapUntilAllUp &&
+          !this.orbitDrag &&
           ev.pointerId === this.primaryPointerId
         ) {
           this.handleTapPick(ev.clientX, ev.clientY);
@@ -816,8 +949,11 @@ export class SceneRenderer {
     const onWheel = (ev: WheelEvent) => {
       ev.preventDefault();
       if (!Number.isFinite(ev.deltaY)) return;
-      if (ev.ctrlKey || ev.metaKey) {
-        const expArg = Math.max(-10, Math.min(10, -ev.deltaY * 0.0025));
+      if (ev.shiftKey) {
+        this.panByScreenDelta(-ev.deltaX * 0.4, -ev.deltaY * 0.4);
+      } else {
+        const zoomSpeed = ev.ctrlKey || ev.metaKey ? 0.0025 : 0.0015;
+        const expArg = Math.max(-10, Math.min(10, -ev.deltaY * zoomSpeed));
         this.targetZoom = Math.max(
           MIN_CAMERA_ZOOM,
           Math.min(MAX_CAMERA_ZOOM, this.targetZoom * Math.exp(expArg)),
@@ -830,13 +966,22 @@ export class SceneRenderer {
           this.wheelZoomSaveTimer = null;
           if (!this.disposed) this.commitZoomSettingOnce();
         }, 250);
-      } else {
-        this.targetPanZ = Math.max(
-          this.minPanZ,
-          Math.min(this.maxPanZ, this.targetPanZ + ev.deltaY * 0.008),
-        );
-        this.cameraDirty = true;
       }
+    };
+
+    const onContextMenu = (ev: Event) => ev.preventDefault(); // right-drag orbits
+
+    const onKeyDown = (ev: KeyboardEvent) => {
+      const t = ev.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const k = ev.key.toLowerCase();
+      if (k === 'q') this.rotateCameraBy(Math.PI / 4);
+      else if (k === 'e') this.rotateCameraBy(-Math.PI / 4);
+      else if (k === 'r') this.resetCameraView();
+      else if (k === 'w' || k === 'arrowup') this.panByScreenDelta(0, 40);
+      else if (k === 's' || k === 'arrowdown') this.panByScreenDelta(0, -40);
+      else if (k === 'a' || k === 'arrowleft') this.panByScreenDelta(40, 0);
+      else if (k === 'd' || k === 'arrowright') this.panByScreenDelta(-40, 0);
     };
 
     dom.addEventListener('pointerdown', onPointerDown);
@@ -845,6 +990,8 @@ export class SceneRenderer {
     window.addEventListener('pointercancel', onPointerEnd);
     window.addEventListener('blur', onWindowBlur);
     dom.addEventListener('wheel', onWheel, { passive: false });
+    dom.addEventListener('contextmenu', onContextMenu);
+    window.addEventListener('keydown', onKeyDown);
 
     this.cleanupInputs = () => {
       dom.removeEventListener('pointerdown', onPointerDown);
@@ -853,11 +1000,22 @@ export class SceneRenderer {
       window.removeEventListener('pointercancel', onPointerEnd);
       window.removeEventListener('blur', onWindowBlur);
       dom.removeEventListener('wheel', onWheel);
+      dom.removeEventListener('contextmenu', onContextMenu);
+      window.removeEventListener('keydown', onKeyDown);
       if (this.wheelZoomSaveTimer !== null) {
         clearTimeout(this.wheelZoomSaveTimer);
         this.wheelZoomSaveTimer = null;
       }
     };
+  }
+
+  private beginTwoFingerGesture(pair: [{ x: number; y: number }, { x: number; y: number }]): void {
+    this.pinchStartDist = Math.hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y);
+    this.pinchStartZoom = this.targetZoom;
+    this.pinchStartAngle = Math.atan2(pair[1].y - pair[0].y, pair[1].x - pair[0].x);
+    this.pinchStartYaw = this.targetYaw;
+    this.pinchStartMidY = (pair[0].y + pair[1].y) / 2;
+    this.pinchStartPitch = this.targetPitch;
   }
 
   private handleTapPick(clientX: number, clientY: number): void {
@@ -1033,6 +1191,30 @@ export class SceneRenderer {
       this.cameraDirty = true;
     } else if (this.cameraPanZ !== this.targetPanZ) {
       this.cameraPanZ = this.targetPanZ;
+      this.cameraDirty = true;
+    }
+
+    if (Math.abs(this.targetPanX - this.cameraPanX) > 0.0005) {
+      this.cameraPanX += (this.targetPanX - this.cameraPanX) * dampT;
+      this.cameraDirty = true;
+    } else if (this.cameraPanX !== this.targetPanX) {
+      this.cameraPanX = this.targetPanX;
+      this.cameraDirty = true;
+    }
+
+    const dampRot = expDampFactor(10, dt);
+    if (Math.abs(this.targetYaw - this.cameraYaw) > 0.0005) {
+      this.cameraYaw += (this.targetYaw - this.cameraYaw) * dampRot;
+      this.cameraDirty = true;
+    } else if (this.cameraYaw !== this.targetYaw) {
+      this.cameraYaw = this.targetYaw;
+      this.cameraDirty = true;
+    }
+    if (Math.abs(this.targetPitch - this.cameraPitch) > 0.0005) {
+      this.cameraPitch += (this.targetPitch - this.cameraPitch) * dampRot;
+      this.cameraDirty = true;
+    } else if (this.cameraPitch !== this.targetPitch) {
+      this.cameraPitch = this.targetPitch;
       this.cameraDirty = true;
     }
 
